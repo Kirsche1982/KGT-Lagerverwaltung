@@ -1,7 +1,7 @@
 {
   "name": "KGT Lagerverwaltung",
   "short_name": "KGT Lager",
-  "start_url": "./KGT Lagerverwaltung PWA V2.html",
+  "start_url": "./",
   "display": "standalone",
   "background_color": "#111827",
   "theme_color": "#111827",
