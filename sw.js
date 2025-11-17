@@ -3,7 +3,7 @@ self.addEventListener('install', function(event) {
     caches.open('kgt-lager-v1').then(function(cache) {
       return cache.addAll([
         './',
-        './KGT Lagerverwaltung PWA V2.html',
+        './index.html',
         './manifest.json',
         './kgt-192.png',
         './kgt-512.png'
