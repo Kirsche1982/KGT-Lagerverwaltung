@@ -1,7 +1,6 @@
 
 
 <!DOCTYPE html>
-<!-- App: KGT Lagerverwaltung – Version 1 (Baseline) -->
 <html lang="de">
 <head>
 <!-- V47: Excel-Export nutzt XLSX.writeFile (robuster Download); Spalte Kategorie bleibt; Rest wie V46 -->
@@ -35,7 +34,7 @@
 <!-- V5: Fix Mitgliederliste: Username-Spalte wieder angehängt; sonst unverändert -->
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>KGT Lagerverwaltung – Baserow Cloud (Passwort‑Login + Cloud‑Backup)</title>
+  <title>KGT Lagerverwaltung – Baserow Cloud (Passwort-Login + Cloud-Backup)</title>
   <link rel="manifest" href="manifest.json">
   <link rel="icon" type="image/png" href="kgt-192.png">
 
@@ -300,7 +299,7 @@ td .delta-neg{ color:#2e4d8b; font-weight:600; }
       <button id="btnManualPush" class="menu-btn push-btn" title="Manueller Sync (hochladen & aktualisieren)" type="button" aria-label="Manueller Sync (hochladen & aktualisieren)" onclick="manualSync()">⇅</button>
 <button id="btnMenu" class="menu-btn" title="Einstellungen" type="button" aria-label="Einstellungen">☰</button>
 
-          <h1 class="apptitle" aria-label="Titel">KGT Lagerverwaltung</h1>
+          <h1 class="apptitle" aria-label="Titel">Lagerverwaltung</h1>
         </div>
       </div>
       <div class="actions">
@@ -6179,7 +6178,13 @@ document.addEventListener('DOMContentLoaded', function(){
       });
     }
     if(document.readyState === 'loading'){
-      document.addEventLis
+      document.addEventListener('DOMContentLoaded', bindAddMember);
+    }else{
+      bindAddMember();
+    }
+  })();
+  </script>
+
 <script>
   if ('serviceWorker' in navigator) {
     window.addEventListener('load', function() {
@@ -6189,11 +6194,5 @@ document.addEventListener('DOMContentLoaded', function(){
     });
   }
 </script>
-tener('DOMContentLoaded', bindAddMember);
-    }else{
-      bindAddMember();
-    }
-  })();
-  </script>
 </body>
 </html>
