@@ -1,0 +1,38 @@
+{
+  "name": "KGT Lagerverwaltung",
+  "short_name": "KGT Lager",
+  "id": "/",
+  "scope": ".",
+  "start_url": ".",
+  "display": "standalone",
+  "background_color": "#0b0c0f",
+  "theme_color": "#2563eb",
+  "description": "Lagerverwaltung (Single-File) mit Supabase‑Sync, Benutzer & Rechte, Offline‑Outbox und Historie.",
+  "icons": [
+    {
+      "src": "icons/kgt-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "icons/kgt-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "icons/kgt-maskable-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "maskable"
+    },
+    {
+      "src": "icons/kgt-maskable-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "maskable"
+    }
+  ],
+  "prefer_related_applications": false
+}
