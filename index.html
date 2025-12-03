@@ -11837,5 +11837,45 @@ document.addEventListener('click', function __grpSaveDelegation(e){
 
 
 
+
+<!-- v101 – Respect AutoSync flag: only push automatically if AutoSync is enabled -->
+<script>
+(function(){
+  try{
+    if (typeof window.queueTask === 'function' && !window.queueTask.__lvAutoSyncGuard){
+      var __orig_qt__ = window.queueTask;
+      window.queueTask = function(name){
+        try{
+          if (name === 'pushAll'){
+            var auto = false;
+            try{
+              // Prefer config flag if available
+              var cfg = (typeof readBrConfig === 'function') ? readBrConfig() : null;
+              if (cfg && typeof cfg.autoSync !== 'undefined') auto = !!cfg.autoSync;
+            }catch(_){}
+            try{
+              // Fallback: read raw localStorage key
+              if (!auto && typeof localStorage !== 'undefined'){
+                var k = (typeof autoSyncKey !== 'undefined') ? autoSyncKey : 'lagerverwaltung_supabase_autosync';
+                auto = (localStorage.getItem(k) === '1' || localStorage.getItem(k) === 'true');
+              }
+            }catch(_){}
+            if (auto){
+              try{ if (typeof processOutbox === 'function') { processOutbox(); } }catch(e){ console.warn(e); }
+            }else{
+              // AutoSync aus -> NICHT senden, nur Rückgabe (Queue bleibt bestehen)
+              // Optional: UI aktualisieren
+              try{ if (typeof render === 'function') render(); }catch(_){}
+            }
+            return;
+          }
+        }catch(e){ console.warn('queueTask autosync guard error', e); }
+        try{ return __orig_qt__.apply(this, arguments); }catch(_){}
+      };
+      window.queueTask.__lvAutoSyncGuard = true;
+    }
+  }catch(_){}
+})();
+</script>
 </body>
 </html>
