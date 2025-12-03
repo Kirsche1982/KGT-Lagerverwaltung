@@ -2080,27 +2080,47 @@ function initSyncOptionsUI(){
 
 
     function applyBrConfigToUi(){
-      updateManualPushVisibility();
-      try{ initSyncOptionsUI(); }catch(_){ }
-      $('#brUrl').value = localStorage.getItem(brUrlKey)||'';
-      $('#brToken').value = localStorage.getItem(brTokenKey)||'';
-      $('#tblItems').value = localStorage.getItem(brTblItemsKey)||'';
-      $('#tblGroups').value = localStorage.getItem(brTblGroupsKey)||'';
-      $('#tblMembers').value = localStorage.getItem(brTblMembersKey)||'';
-      $('#tblBackups').value = localStorage.getItem(brTblBackupsKey)||'';
-      if (document.getElementById('tblAppSettings')) $('#tblAppSettings').value = localStorage.getItem(brTblAppSettingsKey)||'';
-      if (document.getElementById('tblItemOps')) $('#tblItemOps').value = localStorage.getItem(brTblItemOpsKey)||'';
-      if (document.getElementById('skuField')) $('#skuField').value = (localStorage.getItem(brSkuFieldKey)||'sku');
-      $('#autoSyncChk').checked = localStorage.getItem(autoSyncKey)==='1';
-      // ItemOps-Debug-Flag aus localStorage lesen
-      var dbg = localStorage.getItem(itemOpsDebugKey)==='1';
-      var chkDbg = document.getElementById('chkItemOpsDebug');
-      if(chkDbg){ chkDbg.checked = dbg; }
-      try{ window.lvDebugItemOps = !!dbg; }catch(_){}
+  updateManualPushVisibility();
+  try{ initSyncOptionsUI(); }catch(_){ }
 
-      updateManualPushVisibility();
-      updateOutboxUi();
-    }
+  // Konfiguration konsistent über readBrConfig holen
+  var cfg = {};
+  try{
+    cfg = readBrConfig() || {};
+  }catch(_){
+    cfg = {};
+  }
+
+  // Supabase-Einstellungen in die UI schreiben
+  $('#brUrl').value      = cfg.url        || '';
+  $('#brToken').value    = cfg.token      || '';
+  $('#tblItems').value   = cfg.tblItems   || '';
+  $('#tblGroups').value  = cfg.tblGroups  || '';
+  $('#tblMembers').value = cfg.tblMembers || '';
+  $('#tblBackups').value = cfg.tblBackups || '';
+
+  if (document.getElementById('tblAppSettings')){
+    $('#tblAppSettings').value = cfg.tblAppSettings || '';
+  }
+  if (document.getElementById('tblItemOps')){
+    $('#tblItemOps').value = cfg.tblItemOps || '';
+  }
+  if (document.getElementById('skuField')){
+    $('#skuField').value = cfg.skuField || 'sku';
+  }
+
+  // Auto-Sync-Checkbox
+  $('#autoSyncChk').checked = String(cfg.autoSync || '0') === '1';
+
+  // ItemOps-Debug-Flag aus localStorage lesen (wie vorher)
+  var dbg = localStorage.getItem(itemOpsDebugKey)==='1';
+  var chkDbg = document.getElementById('chkItemOpsDebug');
+  if(chkDbg){ chkDbg.checked = dbg; }
+  try{ window.lvDebugItemOps = !!dbg; }catch(_){}
+
+  updateManualPushVisibility();
+  updateOutboxUi();
+}
 
     // ====== Supabase client (ehemals Supabase client) ======
     function getSupabaseConfig(){
