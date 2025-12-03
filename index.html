@@ -8718,19 +8718,24 @@ function enqueueOutbox(item, L){
 
 
 <script>
-function readBrConfig(){ return {
-      url: (localStorage.getItem(brUrlKey)||'').trim(),
-      token: (localStorage.getItem(brTokenKey)||'').trim(),
-      tblItems: (localStorage.getItem(brTblItemsKey)||'').trim(),
-      tblGroups: (localStorage.getItem(brTblGroupsKey)||'').trim(),
-      tblMembers: (localStorage.getItem(brTblMembersKey)||'').trim(),
-      tblBackups: (localStorage.getItem(brTblBackupsKey)||'').trim(),
-      tblAppSettings: (localStorage.getItem(brTblAppSettingsKey)||'').trim(),
-      tblItemOps: (localStorage.getItem(brTblItemOpsKey)||'').trim(),
-      skuField: (localStorage.getItem(brSkuFieldKey)||'sku').trim(),
-      autoSync: localStorage.getItem(autoSyncKey)==='1',
-      requirePw: readRequirePwFlag()
-    } }
+function readBrConfig(){
+  try{
+    return {
+      url:       lsGetMigrate(sbUrlKey, brUrlKey, ''),
+      token:     lsGetMigrate(sbTokenKey, brTokenKey, ''),
+      tblItems:  lsGetMigrate(sbTblItemsKey, brTblItemsKey, ''),
+      tblGroups: lsGetMigrate(sbTblGroupsKey, brTblGroupsKey, ''),
+      tblMembers:lsGetMigrate(sbTblMembersKey, brTblMembersKey, ''),
+      tblBackups:lsGetMigrate(sbTblBackupsKey, brTblBackupsKey, ''),
+      tblAppSettings: lsGetMigrate(sbTblAppSettingsKey, brTblAppSettingsKey, ''),
+      tblItemOps: lsGetMigrate(sbTblItemOpsKey, brTblItemOpsKey, ''),
+      skuField:  lsGetMigrate(sbSkuFieldKey, brSkuFieldKey, 'sku'),
+      autoSync:  lsGetMigrate(sbAutoSyncKey, 'lagerverwaltung_baserow_autosync', '0')
+    };
+  }catch(_){
+    return { url:'', token:'', tblItems:'', tblGroups:'', tblMembers:'', tblBackups:'', tblAppSettings:'', tblItemOps:'', skuField:'sku', autoSync:'0' };
+  }
+}
 
 async function brPostRow(tblName, data, cfg){
   cfg = cfg || (typeof readBrConfig === 'function' ? readBrConfig() : null);
