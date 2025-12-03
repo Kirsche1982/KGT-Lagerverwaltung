@@ -8812,24 +8812,6 @@ async function processOutbox(){
 </script>
 
 
-
-<script>
-// Respektiere die Auto‑Sync‑Einstellung überall zentral
-function isAutoSyncEnabled(){
-  try{
-    var el = document.getElementById('autoSyncChk');
-    if (el) return !!el.checked;
-  }catch(_){}
-  try{
-    if (typeof sbAutoSyncKey !== 'undefined'){
-      var v = localStorage.getItem(sbAutoSyncKey);
-      return v === '1';
-    }
-  }catch(_){}
-  return false;
-}
-</script>
-
 <script>
 function queueTask(name){
   try{
@@ -8837,10 +8819,10 @@ function queueTask(name){
       try{
         var cfg = (typeof readBrConfig==='function') ? readBrConfig() : null;
         if(cfg && cfg.autoSync){
-          // Auto‑Sync aktiv → automatisch senden
+          // Auto‑Sync EIN → sofort senden
           processOutbox();
         }else{
-          // Auto‑Sync aus → nur Status aktualisieren, NICHT senden
+          // Auto‑Sync AUS → nur Status aktualisieren (Warteschlange sichtbar lassen)
           try{ if (typeof render==='function') render(); }catch(_){}
         }
       }catch(_){}
