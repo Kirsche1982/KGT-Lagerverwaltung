@@ -8812,6 +8812,24 @@ async function processOutbox(){
 </script>
 
 
+
+<script>
+// Respektiere die Auto‑Sync‑Einstellung überall zentral
+function isAutoSyncEnabled(){
+  try{
+    var el = document.getElementById('autoSyncChk');
+    if (el) return !!el.checked;
+  }catch(_){}
+  try{
+    if (typeof sbAutoSyncKey !== 'undefined'){
+      var v = localStorage.getItem(sbAutoSyncKey);
+      return v === '1';
+    }
+  }catch(_){}
+  return false;
+}
+</script>
+
 <script>
 function queueTask(name){
   try{
