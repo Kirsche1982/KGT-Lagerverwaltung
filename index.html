@@ -8815,7 +8815,19 @@ async function processOutbox(){
 <script>
 function queueTask(name){
   try{
-    if(name==='pushAll'){ processOutbox(); return; }
+    if(name==='pushAll'){
+      try{
+        var cfg = (typeof readBrConfig==='function') ? readBrConfig() : null;
+        if(cfg && cfg.autoSync){
+          // Auto‑Sync aktiv → automatisch senden
+          processOutbox();
+        }else{
+          // Auto‑Sync aus → nur Status aktualisieren, NICHT senden
+          try{ if (typeof render==='function') render(); }catch(_){}
+        }
+      }catch(_){}
+      return;
+    }
   }catch(e){ console.warn('queueTask error', e); }
 }
 </script>
