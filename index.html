@@ -1504,7 +1504,7 @@ function _autoEnableCategorySyncIfSupported(rows){
 
         if (typeof runFullSync === 'function'){
           // Zentraler Mehrbenutzer‑Ablauf (inkl. ItemOps / Outbox, Push‑first‑Logik)
-          await runFullSync({mode:'full', silent:false});
+          await runFullSync({mode:'standard', silent:false});
         }else{
           // Fallback: bisheriges Verhalten (Push + Pull)
           await cloudPushAll();
@@ -2647,12 +2647,12 @@ if(!isIn && !isOut){ var r = String(L.reason||'').toLowerCase(); if(/eingang|zug
           var signedKind = delta>0 ? 'in' : 'out';
           var qtyReason = reason || (delta>0 ? 'Zugang' : 'Entnahme');
           // qty log (like booking)
-          log.push({ ts: Date.now(), type: 'qty', delta: delta, reason: qtyReason, user: currentUserEmail });
+          var entryEditQty = { ts: Date.now(), type: 'qty', delta: delta, reason: qtyReason, user: currentUserEmail, itemId: (old && (old.id || old.sku || old.code)) || null, sku: (old && old.sku) || '' }; log.push(entryEditQty); try{ addLog(old, entryEditQty); }catch(_){};
           // ensure date fields are set (if empty)
           if(delta>0){ if(!inDate){ inDate = todayStr() } }
           if(delta<0){ if(!outDate){ outDate = todayStr() } }
           // extra semantic log entry (like saveBook: 'in'/'out')
-          log.push({ ts: Date.now(), type: signedKind, delta: 0, reason: (reason || (signedKind === 'in' ? 'Eingang' : 'Ausgang')), user: currentUserEmail });
+          var entryEditKind = { ts: Date.now(), type: signedKind, delta: 0, reason: (reason || (signedKind === 'in' ? 'Eingang' : 'Ausgang')), user: currentUserEmail, itemId: (old && (old.id || old.sku || old.code)) || null, sku: (old && old.sku) || '' }; log.push(entryEditKind); try{ addLog(old, entryEditKind); }catch(_){};
 
         }items[idx]={ id:old.id, name, sku, qty, notes, inDate, outDate, log, createdAt:old.createdAt||Date.now(), updatedAt:Date.now() };
         }
@@ -2697,9 +2697,9 @@ if(!isIn && !isOut){ var r = String(L.reason||'').toLowerCase(); if(/eingang|zug
       if(qtyChange>0){
         var signed=currentBookKind==='in'?qtyChange:-qtyChange;
         var before=Number(it.qty)||0; var after=Math.max(0,before+signed); var delta=after-before; it.qty=after;
-        addLog(it,{ts:Date.now(), type:'qty', delta:delta, reason:(reason|| (currentBookKind==='in'?'Zugang':'Entnahme')), user: currentUserEmail});
+        var entryQty = {ts:Date.now(), type:'qty', delta:delta, reason:(reason|| (currentBookKind==='in'?'Zugang':'Entnahme')), user: currentUserEmail, itemId: (it && (it.id || it.sku || it.code)) || null, sku: (it && it.sku) || ''}; addLog(it, entryQty);
       }
-      addLog(it,{ts:Date.now(), type:currentBookKind, delta:0, reason:reason || (currentBookKind==='in'?'Eingang':'Ausgang'), user: currentUserEmail});
+      var entryKind = {ts:Date.now(), type:currentBookKind, delta:0, reason:reason || (currentBookKind==='in'?'Eingang':'Ausgang'), user: currentUserEmail, itemId: (it && (it.id || it.sku || it.code)) || null, sku: (it && it.sku) || ''}; addLog(it, entryKind);
       it.updatedAt=Date.now();
       saveJson(storageKey, items); render(); maybeCloudPushAll(); bookDlg.close(); toast('Buchung gespeichert');
     }
@@ -2711,7 +2711,7 @@ if(!isIn && !isOut){ var r = String(L.reason||'').toLowerCase(); if(/eingang|zug
       var idx=items.findIndex(function(x){ return x.id===id }); if(idx<0) return;
       var it=items[idx]; var reason=window.prompt("Info zur Mengenänderung (optional):",(by<0?"Entnahme":"Zugang"));
       var before=Number(it.qty)||0; var after=Math.max(0,before+by); var delta=after-before; if(delta===0){ toast('Menge unverändert'); return }
-      it.qty=after; addLog(it,{ts:Date.now(),type:'qty',delta:delta,reason:reason|| (by<0?'Entnahme':'Zugang'), user: currentUserEmail}); it.updatedAt=Date.now();
+      it.qty=after; var entryAdj = {ts:Date.now(),type:'qty',delta:delta,reason:reason|| (by<0?'Entnahme':'Zugang'), user: currentUserEmail, itemId: (it && (it.id || it.sku || it.code)) || null, sku: (it && it.sku) || ''}; addLog(it, entryAdj); it.updatedAt=Date.now();
       saveJson(storageKey, items); render(); maybeCloudPushAll(); toast('Menge aktualisiert');
     }
 
@@ -3801,9 +3801,8 @@ if(_oc){
   try{
     function getPendingCount(){
       try{
-        var raw = localStorage.getItem('lv_pending_ops');
-        if(!raw) return 0;
-        var arr = JSON.parse(raw);
+        // Immer über loadPending() gehen, damit die Aufräum-Logik greift
+        var arr = loadPending();
         return Array.isArray(arr) ? arr.length : 0;
       }catch(_){ return 0; }
     }
@@ -8028,7 +8027,7 @@ document.addEventListener('DOMContentLoaded', function(){
       };
       window[fnName].__v61_wrapped = true;
     }
-    ['addItemLog','logChange','logBooking','pushLog','appendLog','writeLog'].forEach(wrapLogger);
+    ['addItemLog','logChange','logBooking','pushLog','appendLog','writeLog','addLog'].forEach(wrapLogger);
   }catch(e){}
 })();
 </script>
@@ -8188,7 +8187,7 @@ document.addEventListener('DOMContentLoaded', function(){
     }
 
     // Wrap der Log-Schreiber wie in v61, nur ergänzend: opId setzen
-    ['addItemLog','logChange','logBooking','pushLog','appendLog','writeLog'].forEach(function(fn){
+    ['addItemLog','logChange','logBooking','pushLog','appendLog','writeLog','addLog'].forEach(function(fn){
       var f = window[fn];
       if (typeof f === 'function' && !f.__v63_wrapped){
         var orig = f;
@@ -8437,7 +8436,15 @@ document.addEventListener('DOMContentLoaded', function(){
         var raw = localStorage.getItem(PENDING_KEY);
         if (!raw) return [];
         var arr = JSON.parse(raw);
-        if (Array.isArray(arr)) return arr;
+        if (!Array.isArray(arr)) return [];
+        // Einmalige Aufräum-Logik: nur gültige Pending-Einträge behalten
+        var cleaned = arr.filter(function(op){
+          return op && typeof op === 'object' && (op.opId || op.itemId || op.sku);
+        });
+        if (cleaned.length !== arr.length){
+          try{ localStorage.setItem(PENDING_KEY, JSON.stringify(cleaned)); }catch(_){}
+        }
+        return cleaned;
       }catch(_){}
       return [];
     }
@@ -8465,12 +8472,20 @@ document.addEventListener('DOMContentLoaded', function(){
         if (d !== 0){
           if (!entry.opId) entry.opId = uuid();
           if (!entry.ts) entry.ts = Date.now();
-          if (!entry.itemId && entry.item){ entry.itemId = entry.item.id || entry.item.sku || entry.item.code; }
-          addPending({ opId: entry.opId, itemId: entry.itemId || entry.sku || null, delta: d, ts: entry.ts });
+          // itemId bevorzugt aus entry.itemId, sonst aus entry.sku
+          var itemId = entry.itemId || null;
+          if (!itemId && entry.sku){ itemId = entry.sku; }
+          if (itemId && !entry.itemId){ entry.itemId = itemId; }
+          addPending({ opId: entry.opId, itemId: itemId || null, delta: d, ts: entry.ts });
+          // Optional: ItemOps-Outbox befüllen über sku/itemId
+          if (typeof enqueueOutbox === 'function'){
+            var fakeItem = { id: itemId || null, sku: entry.sku || itemId || '' };
+            try{ enqueueOutbox(fakeItem, entry); }catch(_){}
+          }
         }
       }
     }
-    ['addItemLog','logChange','logBooking','pushLog','appendLog','writeLog'].forEach(function(fn){
+    ['addItemLog','logChange','logBooking','pushLog','appendLog','writeLog','addLog'].forEach(function(fn){
       var f = window[fn];
       if (typeof f === 'function' && !f.__v65_pending){
         var orig = f;
@@ -8483,6 +8498,7 @@ document.addEventListener('DOMContentLoaded', function(){
     });
 
     // ---- Rebase nutzt jetzt Pending-ops als Quelle ----
+// ---- Rebase nutzt jetzt Pending-ops als Quelle ----
     function ensureAppliedSetOnItem(it){
       if (!it) return;
       if (!Array.isArray(it.appliedOpIds)) it.appliedOpIds = [];
@@ -8646,7 +8662,28 @@ function getClientId(){
 
 <script>
 var outboxKey  = "lagerverwaltung_outbox_v1";
-function loadOutbox(){ try{ return JSON.parse(localStorage.getItem(outboxKey)||'[]') }catch(_){ return [] } }
+function loadOutbox(){
+  try{
+    var raw = localStorage.getItem(outboxKey) || '[]';
+    var arr = JSON.parse(raw);
+    if (!Array.isArray(arr)) return [];
+    // Einmalige Aufräum-Logik: nur gültige Outbox-Jobs behalten
+    var cleaned = arr.filter(function(j){
+      if (!j || typeof j !== 'object') return false;
+      // mindestens eine Identifikation (opId / itemId / sku)
+      if (!j.opId && !j.itemId && !j.sku) return false;
+      // delta muss eine endliche Zahl sein
+      if (typeof j.delta !== 'number' || !isFinite(j.delta)) return false;
+      return true;
+    });
+    if (cleaned.length !== arr.length){
+      try{ localStorage.setItem(outboxKey, JSON.stringify(cleaned)); }catch(_){}
+    }
+    return cleaned;
+  }catch(_){
+    return [];
+  }
+}
 function saveOutbox(arr){ try{ localStorage.setItem(outboxKey, JSON.stringify(arr)); }catch(_){} }
 
 function updateOutboxUi(){
@@ -9426,8 +9463,10 @@ if (typeof queueTask === 'function'){
       var mode = (options.mode || 'full').toString().toLowerCase();
       var silent = !!options.silent;
 
-      var doPull = (mode === 'full' || mode === 'pull' || mode === 'pullonly');
-      var doPush = (mode === 'full' || mode === 'push' || mode === 'pushonly');
+      // 'standard' verhält sich wie 'full' – für Auto‑Sync und manuellen Sync
+      var isFullLike = (mode === 'full' || mode === 'standard');
+      var doPull = (isFullLike || mode === 'pull' || mode === 'pullonly');
+      var doPush = (isFullLike || mode === 'push' || mode === 'pushonly');
 
       try{
         // 1) Pull aller Kern-Daten (Items, Gruppen, Mitglieder) – inkl. Pending-Rebase, wie bisher
@@ -10046,9 +10085,13 @@ if (typeof queueTask === 'function'){
         // 1) PUSH zuerst
         var pushOk = true;
         try{
-          if(typeof cloudPushAllInternal === 'function'){
-            await cloudPushAllInternal();
-          }else if(typeof cloudPushAll === 'function'){
+          // Achtung: In der aktuellen Supabase‑Variante soll *nicht* mehr das alte
+          // Baserow-cloudPushAllInternal verwendet werden, weil es mit Supabase
+          // nicht kompatibel ist und u.a. die Meldung "Items‑Tabelle fehlt"
+          // auslöst. Deshalb rufen wir hier direkt die öffentliche
+          // Supabase‑Funktion cloudPushAll auf und fallen nur noch auf
+          // processOutbox() zurück.
+          if(typeof cloudPushAll === 'function'){
             await cloudPushAll();
           }else if(typeof processOutbox === 'function'){
             // Fallback: nur Outbox versuchen
@@ -10580,7 +10623,7 @@ document.addEventListener('DOMContentLoaded', function(){
     var banner = document.getElementById('queueBanner');
     var sendNow = document.getElementById('queueSendNow');
     var _apply = function(){
-      var raw = localStorage.getItem('lv_outbox')||'[]'; var arr=[]; try{arr=JSON.parse(raw)}catch(_){arr=[]}
+      var raw = localStorage.getItem(outboxKey)||'[]'; var arr=[]; try{arr=JSON.parse(raw)}catch(_){arr=[]}
       var outboxCount = Array.isArray(arr)?arr.length:0;
       var can = canSyncBasicOrAdvanced();
       if (retry) retry.style.display = (outboxCount>0 && can) ? '' : 'none';
@@ -10588,7 +10631,7 @@ document.addEventListener('DOMContentLoaded', function(){
       if (sendNow) sendNow.disabled = !can;
     };
     _apply();
-    window.addEventListener('storage', function(e){ if (e && e.key==='lv_outbox') _apply(); });
+    window.addEventListener('storage', function(e){ if (e && e.key===outboxKey) _apply(); });
   }catch(_){}
 });
 function queueSendNowClick(){
@@ -10914,18 +10957,20 @@ document.addEventListener('click', function __grpSaveDelegation(e){
     }catch(_){ return false; }
   }
   function outboxCount(){
-    try{ var raw = localStorage.getItem('lv_outbox')||'[]'; var arr = JSON.parse(raw); return Array.isArray(arr)?arr.length:0; }catch(_){ return 0; }
+    try{ var raw = localStorage.getItem(outboxKey)||'[]'; var arr = JSON.parse(raw); return Array.isArray(arr)?arr.length:0; }catch(_){ return 0; }
   }
   function applyOutboxUI(){
     try{
       var retry = $('btnRetryOutbox');
-      var banner = $('queueBanner');
       var sendNow = $('queueSendNow');
       var count = outboxCount();
       var can = canSync();
+      // Retry-Button bleibt an Outbox + Rechten gekoppelt
       if (retry){ retry.style.display = (count>0 && can) ? '' : 'none'; }
-      if (banner){ banner.style.display = (count>0 && can) ? '' : 'none'; }
+      // Button "Jetzt senden" bleibt sauber an Berechtigung gekoppelt
       if (sendNow){ sendNow.disabled = !can; }
+      // Sichtbarkeit & Text des Warteschlangen-Banners werden ausschließlich
+      // von updateQueueStatus() gesteuert, um Flackern zu vermeiden.
     }catch(_){}
   }
   function applyManualSyncUI(){
@@ -10974,7 +11019,7 @@ document.addEventListener('click', function __grpSaveDelegation(e){
     applyManualSyncUI();
   });
   window.addEventListener('storage', function(e){
-    if (e && e.key==='lv_outbox'){ applyOutboxUI(); }
+    if (e && e.key===outboxKey){ applyOutboxUI(); }
     if (e && (e.key==='lv_admin' || e.key==='lv_session')){ applyOutboxUI(); applyManualSyncUI(); }
   });
   // Fallback: periodisch leichtgewichtig prüfen (sehr selten)
@@ -10997,7 +11042,7 @@ document.addEventListener('click', function __grpSaveDelegation(e){
     }catch(_){ return false; }
   }
   function outboxCount(){
-    try{ var raw = localStorage.getItem('lv_outbox')||'[]'; var arr = JSON.parse(raw); return Array.isArray(arr)?arr.length:0; }catch(_){ return 0; }
+    try{ var raw = localStorage.getItem(outboxKey)||'[]'; var arr = JSON.parse(raw); return Array.isArray(arr)?arr.length:0; }catch(_){ return 0; }
   }
   function ensureBadges(){
     var banner = $('queueBanner');
@@ -11064,7 +11109,7 @@ document.addEventListener('click', function __grpSaveDelegation(e){
   document.addEventListener('DOMContentLoaded', applyAll);
   window.addEventListener('storage', function(e){
     if(!e) return;
-    if(e.key==='lv_outbox' || e.key==='lv_admin' || e.key==='lv_session'){ applyAll(); }
+    if(e.key===outboxKey || e.key==='lv_admin' || e.key==='lv_session'){ applyAll(); }
   });
   setInterval(applyAll, 3000);
 })();
@@ -11215,12 +11260,23 @@ document.addEventListener('click', function __grpSaveDelegation(e){
   // --- Kopplung Outbox-Zähler ↔ Status-Pill ---
   function outboxCount(){
     try{
-      var raw = localStorage.getItem('lv_outbox') || '[]';
+      var raw = localStorage.getItem(outboxKey) || '[]';
       var arr = JSON.parse(raw);
       return Array.isArray(arr) ? arr.length : 0;
     }catch(_){ return 0; }
   }
   function applyStatusQueue(){
+    // Ab V70 steuert updateQueueStatus() die Anzeige und den Text
+    // für die Status-Pill „Sync ausstehend“, inklusive Pending-ops
+    // und Outbox-Bestand. Diese Funktion delegiert nur noch dorthin,
+    // um widersprüchliche Updates und Flackern zu vermeiden.
+    try{
+      if (typeof updateQueueStatus === 'function'){
+        updateQueueStatus();
+        return;
+      }
+    }catch(_){}
+    // Fallback: alte Logik (nur Outbox) – wird normalerweise nicht mehr benötigt
     var pill = $('statusQueue');
     if(!pill) return;
     var n = outboxCount();
@@ -11228,13 +11284,12 @@ document.addEventListener('click', function __grpSaveDelegation(e){
       pill.style.display='inline-block';
       pill.textContent = 'Sync ausstehend: ' + n;
     }else{
-      // je nach UI: 0 anzeigen oder ausblenden
       pill.style.display='none';
     }
   }
   document.addEventListener('DOMContentLoaded', applyStatusQueue);
   window.addEventListener('storage', function(e){
-    if(e && e.key==='lv_outbox'){ applyStatusQueue(); }
+    if(e && e.key===outboxKey){ applyStatusQueue(); }
   });
   setInterval(applyStatusQueue, 2500);
 
