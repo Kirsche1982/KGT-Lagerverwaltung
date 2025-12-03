@@ -8812,6 +8812,14 @@ async function processOutbox(){
         await brPostRow(cfg.tblItemOps, row, cfg); // idempotent serverseitig (opId unique in Supabase)
         sent++;
       }catch(e){
+        // 409-Konflikt = Eintrag existiert bereits serverseitig → als "erfolgreich" werten
+        try{
+          var msg = e && e.message ? String(e.message) : '';
+          if (msg.indexOf(' 409 ') !== -1 || msg.indexOf(' 409:') !== -1 || msg.indexOf('Supabase POST failed: 409') !== -1){
+            sent++;
+            continue;
+          }
+        }catch(_){}
         kept.push(j);
       }
     }
@@ -8828,17 +8836,7 @@ async function processOutbox(){
       toast('Outbox-Fehler: ' + e.message);
     }
   }
-}
-</script>
-
-
-<script>
-function queueTask(name){
-  try{
-    if(name==='pushAll'){
-      try{
-        var cfg = (typeof readBrConfig==='function') ? readBrConfig() : null;
-        if(cfg && cfg.autoSync){
+}      if(cfg && cfg.autoSync){
           // Auto‑Sync EIN → sofort senden
           processOutbox();
         }else{
