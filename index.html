@@ -11870,7 +11870,7 @@ document.addEventListener('click', function __grpSaveDelegation(e){
             try{
               // Prefer config flag if available
               var cfg = (typeof readBrConfig === 'function') ? readBrConfig() : null;
-              if (cfg && typeof cfg.autoSync !== 'undefined') auto = !!cfg.autoSync;
+              if (cfg && typeof cfg.autoSync !== 'undefined') auto = (cfg.autoSync === true || cfg.autoSync === '1' || cfg.autoSync === 1);
             }catch(_){}
             try{
               // Fallback: read raw localStorage key
