@@ -8788,13 +8788,13 @@ async function brPostRow(tblName, data, cfg){
 
 async function processOutbox(){
   try{
-    var cfg = readBrConfig();
+    var cfg = (typeof readBrConfig === 'function') ? readBrConfig() : null;
     if (!cfg || !cfg.url || !cfg.token || !cfg.tblItemOps){
       if (typeof toast === 'function'){ toast('Cloud-Konfig unvollständig'); }
       return;
     }
-    var box = loadOutbox();
-    if (!box.length){
+    var box = (typeof loadOutbox === 'function') ? loadOutbox() : [];
+    if (!box || !box.length){
       if (typeof toast === 'function'){ toast('Outbox leer'); }
       return;
     }
@@ -8809,66 +8809,62 @@ async function processOutbox(){
         row.ts       = j.ts;
         row.reason   = j.reason;
         row.clientId = j.clientId;
-        await brPostRow(cfg.tblItemOps, row, cfg); // idempotent serverseitig (opId unique in Supabase)
+        await brPostRow(cfg.tblItemOps, row, cfg); // opId unique in Supabase
         sent++;
       }catch(e){
-        // 409-Konflikt: Eintrag existiert bereits serverseitig → als „erfolgreich“ behandeln
-        try{
-          var msg = e && e.message ? String(e.message) : '';
-          if (msg.indexOf(' 409 ') !== -1 ||
-              msg.indexOf(' 409:') !== -1 ||
-              msg.indexOf('Supabase POST failed: 409') !== -1){
-            sent++;
-            continue;
-          }
-        }catch(_){}
-        kept.push(j);
+        var msg = e && e.message ? String(e.message) : '';
+        // 409-Konflikt = Eintrag existiert bereits serverseitig → als "erfolgreich" werten
+        if (msg.indexOf(' 409 ') !== -1 || msg.indexOf(' 409:') !== -1 || msg.indexOf('Supabase POST failed: 409') !== -1){
+          sent++;
+          continue; // nicht in kept übernehmen
+        }
+        kept.push(j); // anderer Fehler -> in Outbox behalten
       }
     }
-    saveOutbox(kept);
-    if (typeof render === 'function'){
-      try{ render(); }catch(_){}
-    }
+    if (typeof saveOutbox === 'function') saveOutbox(kept);
+    if (typeof updateOutboxUi === 'function') updateOutboxUi();
+    if (typeof render === 'function'){ try{ render(); }catch(_){ } }
     if (typeof toast === 'function'){
       toast('Outbox: ' + sent + ' gesendet, ' + kept.length + ' offen');
     }
   }catch(e){
     console.error(e);
-    if (typeof toast === 'function'){
-      toast('Outbox-Fehler: ' + e.message);
-    }
+    if (typeof toast === 'function'){ toast('Outbox-Fehler: ' + (e && e.message ? e.message : e)); }
   }
-}</script>
+}
+
+function queueSendNowClick(){
+  try{
+    if (typeof processOutbox === 'function'){ processOutbox(); }
+    else {
+      if (typeof toast === 'function') toast('Outbox-Funktion nicht verfügbar');
+      console.error('processOutbox ist nicht definiert');
+    }
+  }catch(e){
+    console.error(e);
+    if (typeof toast === 'function'){ toast('Outbox-Fehler: ' + (e && e.message ? e.message : e)); }
+  }
+}
+</script>
 
 
 <script>
 function queueTask(name){
   try{
     if (name === 'pushAll'){
-      try{
-        var cfg = (typeof readBrConfig === 'function') ? readBrConfig() : null;
-        var auto = false;
-        if (cfg && typeof cfg.autoSync !== 'undefined'){
-          auto = (cfg.autoSync === true || cfg.autoSync === '1' || cfg.autoSync === 1);
-        }
-        if (!auto && typeof localStorage !== 'undefined'){
-          try{
-            var k = (typeof autoSyncKey !== 'undefined') ? autoSyncKey : 'lagerverwaltung_supabase_autosync';
-            var v = localStorage.getItem(k);
-            if (v === '1' || v === 'true') auto = true;
-          }catch(_){}
-        }
-        if (auto){
-          // Auto‑Sync EIN → sofort senden
-          try{ if (typeof processOutbox === 'function'){ processOutbox(); } }catch(e){ console.warn(e); }
-        }else{
-          // Auto‑Sync AUS → nur Status aktualisieren (Warteschlange sichtbar lassen)
-          try{ if (typeof render === 'function') render(); }catch(_){}
-        }
-      }catch(_){}
+      var cfg = (typeof readBrConfig === 'function') ? readBrConfig() : null;
+      var auto = !!(cfg && (cfg.autoSync === true || cfg.autoSync === '1' || cfg.autoSync === 1));
+      if (auto){
+        if (typeof processOutbox === 'function'){ processOutbox(); }
+      }else{
+        if (typeof updateOutboxUi === 'function') updateOutboxUi();
+        if (typeof render === 'function'){ try{ render(); }catch(_){ } }
+      }
       return;
     }
-  }catch(e){ console.warn('queueTask error', e); }
+  }catch(e){
+    if (window.console) console.warn('queueTask error', e);
+  }
 }</script>
 
 <script>
