@@ -8812,10 +8812,12 @@ async function processOutbox(){
         await brPostRow(cfg.tblItemOps, row, cfg); // idempotent serverseitig (opId unique in Supabase)
         sent++;
       }catch(e){
-        // 409-Konflikt = Eintrag existiert bereits serverseitig → als "erfolgreich" werten
+        // 409-Konflikt: Eintrag existiert bereits serverseitig → als „erfolgreich“ behandeln
         try{
           var msg = e && e.message ? String(e.message) : '';
-          if (msg.indexOf(' 409 ') !== -1 || msg.indexOf(' 409:') !== -1 || msg.indexOf('Supabase POST failed: 409') !== -1){
+          if (msg.indexOf(' 409 ') !== -1 ||
+              msg.indexOf(' 409:') !== -1 ||
+              msg.indexOf('Supabase POST failed: 409') !== -1){
             sent++;
             continue;
           }
@@ -8836,19 +8838,38 @@ async function processOutbox(){
       toast('Outbox-Fehler: ' + e.message);
     }
   }
-}      if(cfg && cfg.autoSync){
+}</script>
+
+
+<script>
+function queueTask(name){
+  try{
+    if (name === 'pushAll'){
+      try{
+        var cfg = (typeof readBrConfig === 'function') ? readBrConfig() : null;
+        var auto = false;
+        if (cfg && typeof cfg.autoSync !== 'undefined'){
+          auto = (cfg.autoSync === true || cfg.autoSync === '1' || cfg.autoSync === 1);
+        }
+        if (!auto && typeof localStorage !== 'undefined'){
+          try{
+            var k = (typeof autoSyncKey !== 'undefined') ? autoSyncKey : 'lagerverwaltung_supabase_autosync';
+            var v = localStorage.getItem(k);
+            if (v === '1' || v === 'true') auto = true;
+          }catch(_){}
+        }
+        if (auto){
           // Auto‑Sync EIN → sofort senden
-          processOutbox();
+          try{ if (typeof processOutbox === 'function'){ processOutbox(); } }catch(e){ console.warn(e); }
         }else{
           // Auto‑Sync AUS → nur Status aktualisieren (Warteschlange sichtbar lassen)
-          try{ if (typeof render==='function') render(); }catch(_){}
+          try{ if (typeof render === 'function') render(); }catch(_){}
         }
       }catch(_){}
       return;
     }
   }catch(e){ console.warn('queueTask error', e); }
-}
-</script>
+}</script>
 
 <script>
 if (typeof queueTask === 'function'){
@@ -11857,44 +11878,5 @@ document.addEventListener('click', function __grpSaveDelegation(e){
 
 
 
-<!-- v101 – Respect AutoSync flag: only push automatically if AutoSync is enabled -->
-<script>
-(function(){
-  try{
-    if (typeof window.queueTask === 'function' && !window.queueTask.__lvAutoSyncGuard){
-      var __orig_qt__ = window.queueTask;
-      window.queueTask = function(name){
-        try{
-          if (name === 'pushAll'){
-            var auto = false;
-            try{
-              // Prefer config flag if available
-              var cfg = (typeof readBrConfig === 'function') ? readBrConfig() : null;
-              if (cfg && typeof cfg.autoSync !== 'undefined') auto = (cfg.autoSync === true || cfg.autoSync === '1' || cfg.autoSync === 1);
-            }catch(_){}
-            try{
-              // Fallback: read raw localStorage key
-              if (!auto && typeof localStorage !== 'undefined'){
-                var k = (typeof autoSyncKey !== 'undefined') ? autoSyncKey : 'lagerverwaltung_supabase_autosync';
-                auto = (localStorage.getItem(k) === '1' || localStorage.getItem(k) === 'true');
-              }
-            }catch(_){}
-            if (auto){
-              try{ if (typeof processOutbox === 'function') { processOutbox(); } }catch(e){ console.warn(e); }
-            }else{
-              // AutoSync aus -> NICHT senden, nur Rückgabe (Queue bleibt bestehen)
-              // Optional: UI aktualisieren
-              try{ if (typeof render === 'function') render(); }catch(_){}
-            }
-            return;
-          }
-        }catch(e){ console.warn('queueTask autosync guard error', e); }
-        try{ return __orig_qt__.apply(this, arguments); }catch(_){}
-      };
-      window.queueTask.__lvAutoSyncGuard = true;
-    }
-  }catch(_){}
-})();
-</script>
 </body>
 </html>
