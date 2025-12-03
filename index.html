@@ -3715,9 +3715,9 @@ if(_oc){
     $('#btnLoginAdminLocal') && $('#btnLoginAdminLocal').addEventListener('click', function(){ if(confirm('Nur zur Ersteinrichtung gedacht. Fortfahren?')){ setSession('Admin (lokal)'); $('#login').close(); toast('Als Admin (lokal) angemeldet') } });
 
     // Maybe push on changes (autosync)
-    function maybeCloudPushAll(){ var cfg=readBrConfig(); if(cfg.autoSync){ cloudPushAll().catch(function(e){ /* bereits in Warteschlange erfasst */ }) } }
-    async function maybeCloudPushGroups(){ var cfg=readBrConfig(); if(cfg.autoSync){ try{ await pushGroupsOnly() }catch(e){ queueTask('pushGroups') } } }
-    async function maybeCloudPushMembers(){ var cfg=readBrConfig(); if(cfg.autoSync){ try{ await pushMembersOnly() }catch(e){ queueTask('pushMembers') } } }
+    function maybeCloudPushAll(){ var cfg=readBrConfig(); if(cfg && (cfg.autoSync === true || cfg.autoSync === '1' || cfg.autoSync === 1)){ cloudPushAll().catch(function(e){ /* bereits in Warteschlange erfasst */ }) } }
+    async function maybeCloudPushGroups(){ var cfg=readBrConfig(); if(cfg && (cfg.autoSync === true || cfg.autoSync === '1' || cfg.autoSync === 1)){ try{ await pushGroupsOnly() }catch(e){ queueTask('pushGroups') } } }
+    async function maybeCloudPushMembers(){ var cfg=readBrConfig(); if(cfg && (cfg.autoSync === true || cfg.autoSync === '1' || cfg.autoSync === 1)){ try{ await pushMembersOnly() }catch(e){ queueTask('pushMembers') } } }
 
     // Start
     if (document.readyState === 'loading') {
@@ -10219,7 +10219,8 @@ if (typeof queueTask === 'function'){
     window.maybeCloudPushAll = function(){
       try{
         var cfg = readBrConfig();
-        if(cfg && cfg.autoSync && typeof window.runFullSync==='function'){
+        var auto = !!(cfg && (cfg.autoSync === true || cfg.autoSync === '1' || cfg.autoSync === 1));
+        if(auto && typeof window.runFullSync==='function'){
           return window.runFullSync({ mode:'standard', silent:true });
         }
       }catch(_){}
