@@ -2724,7 +2724,55 @@ if(!isIn && !isOut){ var r = String(L.reason||'').toLowerCase(); if(/eingang|zug
       saveJson(storageKey, items); render(); maybeCloudPushAll(); bookDlg.close(); toast('Buchung gespeichert');
     }
 
-    function addLog(it, entry){ if(!it.log) it.log=[]; it.log.push(entry) }
+    function addLog(it, entry){
+  try{
+    if(!it) return;
+    if(!Array.isArray(it.log)) it.log = [];
+    // Deep copy to avoid later mutations
+    var e = (entry && typeof entry==='object') ? JSON.parse(JSON.stringify(entry)) : {type:'qty', delta:0};
+    // Ensure robust timestamp and unique opId (use v101 helpers if present)
+    try{
+      if (typeof window.__lv_nextTs === 'function'){
+        e.ts = window.__lv_nextTs(e.ts);
+      } else {
+        var n = Number(e.ts); if (!isFinite(n) || n<=0) n = Date.now(); e.ts = n;
+      }
+      if (!e.opId){
+        if (typeof window.uid === 'function') e.opId = 'op_'+window.uid();
+        else e.opId = 'op_'+Date.now().toString(36)+'_'+Math.random().toString(36).slice(2,8);
+      }
+    }catch(_){}
+    // Normalize delta to number (never string)
+    try{ e.delta = Number((e.delta==null?0:e.delta)); }catch(_){ e.delta = 0; }
+    // Guarantee uniqueness in the same second for identical (type, delta, user, sku/itemId)
+    // If a duplicate is found, bump ts by +1ms to force a new row instead of replacing.
+    try{
+      var sec = function(x){ try{ return Math.floor(Number(x)/1000); }catch(_){ return null; } };
+      var signKey = function(x){
+        var d = Number(x.delta||0);
+        if (d>0) return 'in';
+        if (d<0) return 'out';
+        var t = (x.type||'').toString().toLowerCase();
+        if (t==='in' || t.indexOf('ein')===0) return 'in';
+        if (t==='out'|| t.indexOf('aus')===0) return 'out';
+        return '0';
+      };
+      var keyNew = [sec(e.ts), (e.user||''), (e.type||''), signKey(e), (e.itemId||e.sku||'')].join('|');
+      var clash = it.log.some(function(x){
+        var k = [sec(x.ts), (x.user||''), (x.type||''), signKey(x), (x.itemId||x.sku||'')].join('|');
+        return k === keyNew;
+      });
+      if (clash){
+        // push as a distinct entry
+        e.ts = Number(e.ts||Date.now()) + 1;
+      }
+    }catch(_){}
+    it.log.push(e);
+  }catch(_){
+    // Fallback to previous behavior
+    if(!it.log) it.log=[]; it.log.push(entry);
+  }
+}
 
     function adjustQty(id, by){
       if(!has('adjust_qty')){ toast('Keine Berechtigung'); return }
