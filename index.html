@@ -1,5 +1,12 @@
 <!--
 Changelog
+2025-12-04 – v035 – Log-Dedupe entschärft (Historie)
+- Cloud-Merge der Log-Einträge überarbeitet: opId-basiert und mit konservativer Duplikaterkennung.
+- Echte Aktionen erzeugen nun zuverlässig separate Historien-Einträge, auch bei gleicher Sekunde.
+-->
+
+<!--
+Changelog
 2025-11-30 – v033 – Lokaler Speicher-Reset mit Reload-Hinweis
 - Nach dem Löschen der lokalen Lagerdaten wird eine Nachfrage angezeigt, ob die Seite direkt neu geladen werden soll.
 -->
@@ -2724,52 +2731,7 @@ if(!isIn && !isOut){ var r = String(L.reason||'').toLowerCase(); if(/eingang|zug
       saveJson(storageKey, items); render(); maybeCloudPushAll(); bookDlg.close(); toast('Buchung gespeichert');
     }
 
-    function addLog(it, entry){
-  try{
-    if(!it) return;
-    if(!Array.isArray(it.log)) it.log = [];
-    // Deep copy to avoid later mutations
-    var e = (entry && typeof entry==='object') ? JSON.parse(JSON.stringify(entry)) : {type:'qty', delta:0};
-    // Ensure robust timestamp and unique opId (use v101 helpers if present)
-    try{
-      if (typeof window.__lv_nextTs === 'function'){
-        e.ts = window.__lv_nextTs(e.ts);
-      } else {
-        var n = Number(e.ts); if (!isFinite(n) || n<=0) n = Date.now(); e.ts = n;
-      }
-      if (!e.opId){
-        if (typeof window.uid === 'function') e.opId = 'op_'+window.uid();
-        else e.opId = 'op_'+Date.now().toString(36)+'_'+Math.random().toString(36).slice(2,8);
-      }
-    }catch(_){}
-    // Normalize delta to number (never string)
-    try{ e.delta = Number((e.delta==null?0:e.delta)); }catch(_){ e.delta = 0; }
-    // Guarantee uniqueness in the same second for identical (type, delta, user, sku/itemId)
-    // If a duplicate is found, bump ts by +1ms to force a new row instead of replacing.
-    try{
-      var sec = function(x){ try{ return Math.floor(Number(x)/1000); }catch(_){ return null; } };
-      var signKey = function(x){
-        var d = Number(x.delta||0);
-        if (d>0) return 'in';
-        if (d<0) return 'out';
-        var t = (x.type||'').toString().toLowerCase();
-        if (t==='in' || t.indexOf('ein')===0) return 'in';
-        if (t==='out'|| t.indexOf('aus')===0) return 'out';
-        return '0';
-      };
-      var keyNew = [sec(e.ts), (e.user||''), (e.type||''), signKey(e), (e.itemId||e.sku||'')].join('|');
-      var clash = it.log.some(function(x){
-        var k = [sec(x.ts), (x.user||''), (x.type||''), signKey(x), (x.itemId||x.sku||'')].join('|');
-        return k === keyNew;
-      });
-      var guard=0; while(clash && guard<2000){ var nowMs=Number(e.ts||Date.now()); var nextSec=(Math.floor(nowMs/1000)+1)*1000; e.ts=nextSec; keyNew=[Math.floor(e.ts/1000),(e.user||''),(e.type||''),signKey(e),(e.itemId||e.sku||'')].join('|'); clash=it.log.some(function(x){ var k=[Math.floor(Number(x.ts)/1000),(x.user||''),(x.type||''),signKey(x),(x.itemId||x.sku||'')].join('|'); return k===keyNew;}); guard++; }
-    }catch(_){}
-    it.log.push(e);
-  }catch(_){
-    // Fallback to previous behavior
-    if(!it.log) it.log=[]; it.log.push(entry);
-  }
-}
+    function addLog(it, entry){ if(!it.log) it.log=[]; it.log.push(entry) }
 
     function adjustQty(id, by){
       if(!has('adjust_qty')){ toast('Keine Berechtigung'); return }
@@ -3760,9 +3722,9 @@ if(_oc){
     $('#btnLoginAdminLocal') && $('#btnLoginAdminLocal').addEventListener('click', function(){ if(confirm('Nur zur Ersteinrichtung gedacht. Fortfahren?')){ setSession('Admin (lokal)'); $('#login').close(); toast('Als Admin (lokal) angemeldet') } });
 
     // Maybe push on changes (autosync)
-    function maybeCloudPushAll(){ var cfg=readBrConfig(); if(cfg && (cfg.autoSync === true || cfg.autoSync === '1' || cfg.autoSync === 1)){ cloudPushAll().catch(function(e){ /* bereits in Warteschlange erfasst */ }) } }
-    async function maybeCloudPushGroups(){ var cfg=readBrConfig(); if(cfg && (cfg.autoSync === true || cfg.autoSync === '1' || cfg.autoSync === 1)){ try{ await pushGroupsOnly() }catch(e){ queueTask('pushGroups') } } }
-    async function maybeCloudPushMembers(){ var cfg=readBrConfig(); if(cfg && (cfg.autoSync === true || cfg.autoSync === '1' || cfg.autoSync === 1)){ try{ await pushMembersOnly() }catch(e){ queueTask('pushMembers') } } }
+    function maybeCloudPushAll(){ var cfg=readBrConfig(); if(cfg.autoSync){ cloudPushAll().catch(function(e){ /* bereits in Warteschlange erfasst */ }) } }
+    async function maybeCloudPushGroups(){ var cfg=readBrConfig(); if(cfg.autoSync){ try{ await pushGroupsOnly() }catch(e){ queueTask('pushGroups') } } }
+    async function maybeCloudPushMembers(){ var cfg=readBrConfig(); if(cfg.autoSync){ try{ await pushMembersOnly() }catch(e){ queueTask('pushMembers') } } }
 
     // Start
     if (document.readyState === 'loading') {
@@ -6894,25 +6856,22 @@ var tbody=document.querySelector('#alertsTable tbody'); if(!tbody) return; tbody
     }
   }
 
-  
-function applyOnce(){
-  var tbs = findHistoryTables();
-  for (var i=0;i<tbs.length;i++){
-    var table = tbs[i];
-    patchTable(table);
-    if (!table.__lv48Obs){
-      var pending=false;
-      var obs = new MutationObserver(function(){
-        if (pending) return; pending=true;
-        (window.requestAnimationFrame||function(f){return setTimeout(f,16)})(function(){ pending=false; patchTable(table); });
-      });
-      obs.observe(table.tBodies[0] || table, {childList:true, subtree:true, characterData:true});
-      table.__lv48Obs = obs;
+  function applyOnce(){
+    var tbs = findHistoryTables();
+    for (var i=0;i<tbs.length;i++){
+      patchTable(tbs[i]);
+      if (!tbs[i].__lv48Obs){
+        var pending=false;
+        var obs = new MutationObserver(function(){
+          if (pending) return; pending=true;
+          (window.requestAnimationFrame||function(f){return setTimeout(f,16)})(function(){ pending=false; patchTable(tbs[i]); });
+        });
+        obs.observe(tbs[i].tBodies[0] || tbs[i], {childList:true, subtree:true, characterData:true});
+        tbs[i].__lv48Obs = obs;
+      }
     }
+    injectAdminClear();
   }
-  injectAdminClear();
-}
-
 
   // ---- Admin: Historie löschen (nur wenn lv_admin==='1' oder window.isAdmin===true) ----
   function isAdmin(){
@@ -8836,13 +8795,13 @@ async function brPostRow(tblName, data, cfg){
 
 async function processOutbox(){
   try{
-    var cfg = (typeof readBrConfig === 'function') ? readBrConfig() : null;
+    var cfg = readBrConfig();
     if (!cfg || !cfg.url || !cfg.token || !cfg.tblItemOps){
       if (typeof toast === 'function'){ toast('Cloud-Konfig unvollständig'); }
       return;
     }
-    var box = (typeof loadOutbox === 'function') ? loadOutbox() : [];
-    if (!box || !box.length){
+    var box = loadOutbox();
+    if (!box.length){
       if (typeof toast === 'function'){ toast('Outbox leer'); }
       return;
     }
@@ -8857,40 +8816,24 @@ async function processOutbox(){
         row.ts       = j.ts;
         row.reason   = j.reason;
         row.clientId = j.clientId;
-        await brPostRow(cfg.tblItemOps, row, cfg); // opId unique in Supabase
+        await brPostRow(cfg.tblItemOps, row, cfg); // idempotent serverseitig (opId unique in Supabase)
         sent++;
       }catch(e){
-        var msg = e && e.message ? String(e.message) : '';
-        // 409-Konflikt = Eintrag existiert bereits serverseitig → als "erfolgreich" werten
-        if (msg.indexOf(' 409 ') !== -1 || msg.indexOf(' 409:') !== -1 || msg.indexOf('Supabase POST failed: 409') !== -1){
-          sent++;
-          continue; // nicht in kept übernehmen
-        }
-        kept.push(j); // anderer Fehler -> in Outbox behalten
+        kept.push(j);
       }
     }
-    if (typeof saveOutbox === 'function') saveOutbox(kept);
-    if (typeof updateOutboxUi === 'function') updateOutboxUi();
-    if (typeof render === 'function'){ try{ render(); }catch(_){ } }
+    saveOutbox(kept);
+    if (typeof render === 'function'){
+      try{ render(); }catch(_){}
+    }
     if (typeof toast === 'function'){
       toast('Outbox: ' + sent + ' gesendet, ' + kept.length + ' offen');
     }
   }catch(e){
     console.error(e);
-    if (typeof toast === 'function'){ toast('Outbox-Fehler: ' + (e && e.message ? e.message : e)); }
-  }
-}
-
-function queueSendNowClick(){
-  try{
-    if (typeof processOutbox === 'function'){ processOutbox(); }
-    else {
-      if (typeof toast === 'function') toast('Outbox-Funktion nicht verfügbar');
-      console.error('processOutbox ist nicht definiert');
+    if (typeof toast === 'function'){
+      toast('Outbox-Fehler: ' + e.message);
     }
-  }catch(e){
-    console.error(e);
-    if (typeof toast === 'function'){ toast('Outbox-Fehler: ' + (e && e.message ? e.message : e)); }
   }
 }
 </script>
@@ -8899,21 +8842,22 @@ function queueSendNowClick(){
 <script>
 function queueTask(name){
   try{
-    if (name === 'pushAll'){
-      var cfg = (typeof readBrConfig === 'function') ? readBrConfig() : null;
-      var auto = !!(cfg && (cfg.autoSync === true || cfg.autoSync === '1' || cfg.autoSync === 1));
-      if (auto){
-        if (typeof processOutbox === 'function'){ processOutbox(); }
-      }else{
-        if (typeof updateOutboxUi === 'function') updateOutboxUi();
-        if (typeof render === 'function'){ try{ render(); }catch(_){ } }
-      }
+    if(name==='pushAll'){
+      try{
+        var cfg = (typeof readBrConfig==='function') ? readBrConfig() : null;
+        if(cfg && cfg.autoSync){
+          // Auto‑Sync EIN → sofort senden
+          processOutbox();
+        }else{
+          // Auto‑Sync AUS → nur Status aktualisieren (Warteschlange sichtbar lassen)
+          try{ if (typeof render==='function') render(); }catch(_){}
+        }
+      }catch(_){}
       return;
     }
-  }catch(e){
-    if (window.console) console.warn('queueTask error', e);
-  }
-}</script>
+  }catch(e){ console.warn('queueTask error', e); }
+}
+</script>
 
 <script>
 if (typeof queueTask === 'function'){
@@ -8943,17 +8887,3024 @@ if (typeof queueTask === 'function'){
 
     if (typeof window.addLog === 'function' && !window.addLog.__lvItemOpsWrapped){
       var origAddLog = window.addLog;
-      
+      window.addLog = function(it, entry){
+        var result = origAddLog.apply(this, arguments);
+        try{
+          if (entry && typeof entry === 'object' && entry.type === 'qty'){
+            var delta = Number(entry.delta || 0);
+            if (delta !== 0){
+              if (typeof itemOpsLocal === 'undefined' || !Array.isArray(itemOpsLocal)){
+                itemOpsLocal = [];
+              }
+              var opId = '';
+              try{
+                if (entry.opId) opId = String(entry.opId);
+                else if (typeof crypto !== 'undefined' && crypto.randomUUID){
+                  opId = crypto.randomUUID();
+                }else{
+                  opId = 'local_' + Date.now() + '_' + Math.random().toString(16).slice(2);
+                }
+              }catch(_){
+                opId = 'local_' + Date.now() + '_' + Math.random().toString(16).slice(2);
+              }
+
+              var sku = '';
+              try{
+                if (it){
+                  if (it.sku) sku = String(it.sku);
+                  else if (it.code) sku = String(it.code);
+                  else if (it.id) sku = String(it.id);
+                }
+              }catch(_){}
+
+              var itemId = '';
+              try{
+                if (it && it.id) itemId = String(it.id);
+              }catch(_){}
+
+              var ts = Number(entry.ts || Date.now());
+              var reason = '';
+              try{ if (entry.reason) reason = String(entry.reason); }catch(_){}
+              var user = '';
+              try{
+                if (entry.user) user = String(entry.user);
+                else if (typeof window.currentUserEmail !== 'undefined') user = String(window.currentUserEmail || '');
+              }catch(_){}
+
+              itemOpsLocal.push({
+                opId: opId,
+                sku: sku,
+                itemId: itemId,
+                delta: delta,
+                ts: ts,
+                reason: reason,
+                user: user,
+                source: 'addLog'
+              });
+
+              persistItemOpsLocal();
+            }
+          }
+        }catch(_){}
+        return result;
+      };
+      window.addLog.__lvItemOpsWrapped = true;
+      window.addLog.__lvItemOpsOrig = origAddLog;
+    }
   }catch(_){}
 })();
+</script>
 
-      // Safe no-op wrapper to avoid broken script due to truncation
-      window.addLog = (function(orig){
-        function toSec(ts){ try{ return Math.floor(Number(ts)/1000); }catch(_){ return null; } }
-        return function(it, entry){
-          // call original to preserve behavior
-          try{ return orig.apply(this, arguments); }catch(e){ try{ if(window.console) console.error(e); }catch(_){ } }
+<script>
+// v74 – cloudPullItemOps: ItemOps aus Supabase laden (nur lokal speichern, keine Bestandsänderung)
+(function(){
+  try{
+    var itemOpsCloudKey = 'lv_item_ops_cloud';
+
+    async function cloudPullItemOps(options){
+      options = options || {};
+      var silent = !!options.silent;
+      var cfg;
+      try{
+        if (typeof readBrConfig !== 'function'){
+          if (!silent && typeof toast === 'function'){
+            try{ toast('Cloud-Konfiguration nicht verfügbar'); }catch(_){}
+          }
+          return [];
+        }
+        cfg = readBrConfig();
+      }catch(e){
+        if (!silent && typeof toast === 'function'){
+          try{ toast('Cloud-Konfiguration ungültig'); }catch(_){}
+        }
+        throw e;
+      }
+
+      if (!cfg || !cfg.url || !cfg.token || !cfg.tblItemOps){
+        if (!silent && typeof toast === 'function'){
+          try{ toast('Cloud: Tabelle „itemops“ ist nicht konfiguriert'); }catch(_){}
+        }
+        return [];
+      }
+
+      if (!silent){
+        try{
+          var statusEl = document.getElementById('itemOpsStatus');
+          if (statusEl){ statusEl.textContent = 'ItemOps: Laden aus Cloud ...'; }
+        }catch(_){}
+      }
+
+      var all = [];
+      try{
+        if (typeof brListAll !== 'function'){
+          throw new Error('brListAll nicht verfügbar');
+        }
+        all = await brListAll(cfg.tblItemOps, { order_by: 'ts' });
+      }catch(e){
+        if (!silent && typeof toast === 'function'){
+          try{ toast('Fehler beim Laden der ItemOps aus Supabase'); }catch(_){}
+        }
+        throw e;
+      }
+
+      try{
+        localStorage.setItem(itemOpsCloudKey, JSON.stringify(all));
+      }catch(_){}
+
+      if (!silent){
+        var msg = 'ItemOps aus Cloud geladen: ' + all.length + ' Einträge';
+        try{
+          if (typeof toast === 'function'){ toast(msg); }
+          var el = document.getElementById('itemOpsStatus');
+          if (el){ el.textContent = msg; }
+        }catch(_){}
+      }
+      return all;
+    }
+
+    if (typeof window.cloudPullItemOps !== 'function'){
+      window.cloudPullItemOps = cloudPullItemOps;
+    }
+
+    document.addEventListener('DOMContentLoaded', function(){
+      if (!window.lvDebugItemOps){ return; }
+      try{
+        var sec = document.getElementById('secCloud');
+        if (!sec){ return; }
+
+        var rows = sec.querySelectorAll('.row');
+        var targetRow = rows[1] || rows[0] || null;
+        if (targetRow && !document.getElementById('btnItemOpsPull')){
+          var btn = document.createElement('button');
+          btn.type = 'button';
+          btn.className = 'btn';
+          btn.id = 'btnItemOpsPull';
+          btn.textContent = 'ItemOps laden (Test)';
+          btn.addEventListener('click', function(){
+            cloudPullItemOps().catch(function(err){
+              try{
+                if (window.console && console.error){ console.error(err); }
+                if (typeof toast === 'function'){ toast('Fehler beim Laden der ItemOps'); }
+              }catch(_){}
+            });
+          });
+          targetRow.insertBefore(btn, targetRow.firstChild);
+        }
+
+        if (!document.getElementById('itemOpsStatus')){
+          var info = document.createElement('div');
+          info.id = 'itemOpsStatus';
+          info.className = 'hint';
+          info.style.marginTop = '4px';
+          info.textContent = 'ItemOps: noch keine Daten aus der Cloud geladen.';
+          sec.appendChild(info);
+        }
+      }catch(_){}
+    });
+  }catch(_){}
+})();
+;
+</script>
+
+<script>
+// v75 – ItemOps-Simulation (Dry-Run, keine Bestandsänderung)
+(function(){
+  try{
+    function loadJsonSafe(key, fallback){
+      try{
+        var raw = localStorage.getItem(key);
+        if(!raw) return fallback;
+        var data = JSON.parse(raw);
+        return (data === null || typeof data === 'undefined') ? fallback : data;
+      }catch(_){ return fallback; }
+    }
+
+    function buildItemIndex(){
+      var list = [];
+      try{
+        if(!Array.isArray(items)) return list;
+      }catch(_){ return list; }
+      for(var i=0;i<items.length;i++){
+        var it = items[i];
+        if(!it) continue;
+        var k = "";
+        try{
+          if(it.sku) k = String(it.sku);
+          else if(it.code) k = String(it.code);
+          else if(it.id != null) k = String(it.id);
+        }catch(_){}
+        if(!k) continue;
+
+        var applied = {};
+        try{
+          if(Array.isArray(it.appliedOpIds)){
+            for(var j=0;j<it.appliedOpIds.length;j++){
+              var oid = it.appliedOpIds[j];
+              if(!oid) continue;
+              applied[String(oid)] = true;
+            }
+          }
+        }catch(_){}
+        try{
+          if(Array.isArray(it.log)){
+            for(var j=0;j<it.log.length;j++){
+              var le = it.log[j];
+              if(le && le.type === 'qty' && le.opId){
+                applied[String(le.opId)] = true;
+              }
+            }
+          }
+        }catch(_){}
+        list.push({ item: it, key: k, applied: applied });
+      }
+      return list;
+    }
+
+    function getBrConfigSafe(){
+      try{
+        if(typeof readBrConfig === 'function'){
+          return readBrConfig();
+        }
+      }catch(_){}
+      return {};
+    }
+
+    function collectItemOps(){
+      var cfg = getBrConfigSafe() || {};
+      var skuFieldName = cfg.skuField || 'sku';
+      var localOps = loadJsonSafe('lv_item_ops_local', []);
+      var cloudOps = loadJsonSafe('lv_item_ops_cloud', []);
+      var ops = [];
+
+      if(Array.isArray(localOps)){
+        for(var i=0;i<localOps.length;i++){
+          var op = localOps[i];
+          if(!op) continue;
+          var delta = Number(op.delta || 0);
+          if(!delta) continue;
+          var sku = "";
+          try{
+            sku = op.sku || op.itemId || "";
+            if(sku) sku = String(sku);
+          }catch(_){}
+          if(!sku) continue;
+          var opId = "";
+          try{ if(op.opId) opId = String(op.opId); }catch(_){}
+          var ts = 0;
+          try{ ts = Number(op.ts || 0) || 0; }catch(_){}
+          ops.push({
+            source: 'local',
+            sku: sku,
+            opId: opId,
+            delta: delta,
+            ts: ts
+          });
+        }
+      }
+
+      if(Array.isArray(cloudOps)){
+        for(var i=0;i<cloudOps.length;i++){
+          var row = cloudOps[i];
+          if(!row) continue;
+          var delta2 = 0;
+          try{ delta2 = Number(row.delta || 0) || 0; }catch(_){}
+          if(!delta2) continue;
+          var sku2 = "";
+          try{
+            if(row[skuFieldName]) sku2 = String(row[skuFieldName]);
+            else if(row.sku) sku2 = String(row.sku);
+          }catch(_){}
+          if(!sku2) continue;
+          var opId2 = "";
+          try{ if(row.opId) opId2 = String(row.opId); }catch(_){}
+          var ts2 = 0;
+          try{ ts2 = Number(row.ts || 0) || 0; }catch(_){}
+          ops.push({
+            source: 'cloud',
+            sku: sku2,
+            opId: opId2,
+            delta: delta2,
+            ts: ts2
+          });
+        }
+      }
+      return ops;
+    }
+
+    function simulateItemOps(){
+      var index = buildItemIndex();
+      if(!index.length) return [];
+      var ops = collectItemOps();
+      if(!ops.length) return [];
+      var bySku = {};
+      for(var i=0;i<index.length;i++){
+        var e = index[i];
+        bySku[e.key] = e;
+      }
+      var resultMap = {};
+      for(var k=0;k<ops.length;k++){
+        var op = ops[k];
+        var idx = bySku[op.sku];
+        if(!idx) continue;
+        if(op.opId && idx.applied && idx.applied[op.opId]) continue;
+        var item = idx.item;
+        var resKey = item.id != null ? String(item.id) : idx.key;
+        var r = resultMap[resKey];
+        if(!r){
+          r = {
+            item: item,
+            sku: op.sku,
+            name: item.name || "",
+            currentQty: Number(item.qty || 0),
+            pendingDelta: 0,
+            opCount: 0,
+            localCount: 0,
+            cloudCount: 0
+          };
+          resultMap[resKey] = r;
+        }
+        r.pendingDelta += op.delta;
+        r.opCount++;
+        if(op.source === 'local') r.localCount++;
+        if(op.source === 'cloud') r.cloudCount++;
+      }
+      var out = [];
+      for(var key in resultMap){
+        if(!Object.prototype.hasOwnProperty.call(resultMap, key)) continue;
+        var r = resultMap[key];
+        r.simQty = r.currentQty + r.pendingDelta;
+        out.push(r);
+      }
+      out.sort(function(a,b){
+        var da = Math.abs(a.pendingDelta);
+        var db = Math.abs(b.pendingDelta);
+        if(db !== da) return db - da;
+        var na = (a.name||"") + " " + (a.sku||"");
+        var nb = (b.name||"") + " " + (b.sku||"");
+        return na.localeCompare(nb);
+      });
+      return out;
+    }
+
+    function renderItemOpsSimulation(){
+      var dlg = document.getElementById('itemOpsSimDlg');
+      if(!dlg) return;
+      var tbody = dlg.querySelector('tbody');
+      var emptyMsg = dlg.querySelector('.emptyMsg');
+      if(!tbody) return;
+      while(tbody.firstChild){ tbody.removeChild(tbody.firstChild); }
+
+      var rows;
+      try{
+        rows = simulateItemOps();
+      }catch(e){
+        rows = [];
+        try{
+          if(window.console && console.error) console.error(e);
+          if(typeof toast === 'function') toast('Fehler bei der Simulation');
+        }catch(_){}
+      }
+
+      if(!rows || !rows.length){
+        if(emptyMsg) emptyMsg.style.display = '';
+        return;
+      }
+      if(emptyMsg) emptyMsg.style.display = 'none';
+
+      for(var i=0;i<rows.length;i++){
+        var r = rows[i];
+        var tr = document.createElement('tr');
+
+        var tdName = document.createElement('td');
+        tdName.textContent = r.name || '—';
+        tr.appendChild(tdName);
+
+        var tdSku = document.createElement('td');
+        tdSku.textContent = r.sku || '—';
+        tr.appendChild(tdSku);
+
+        var tdCur = document.createElement('td');
+        tdCur.textContent = String(r.currentQty);
+        tr.appendChild(tdCur);
+
+        var tdDelta = document.createElement('td');
+        var sign = r.pendingDelta > 0 ? '+' : '';
+        tdDelta.textContent = sign + String(r.pendingDelta);
+        tr.appendChild(tdDelta);
+
+        var tdSim = document.createElement('td');
+        tdSim.textContent = String(r.simQty);
+        tr.appendChild(tdSim);
+
+        var tdOps = document.createElement('td');
+        tdOps.textContent = r.opCount + ' (' + r.localCount + ' lokal, ' + r.cloudCount + ' Cloud)';
+        tr.appendChild(tdOps);
+
+        tbody.appendChild(tr);
+      }
+    }
+
+    function ensureItemOpsSimDialog(){
+      var dlg = document.getElementById('itemOpsSimDlg');
+      if(dlg) return dlg;
+      dlg = document.createElement('dialog');
+      dlg.id = 'itemOpsSimDlg';
+      dlg.className = 'modal';
+      dlg.innerHTML =
+        "<header>" +
+          "<strong>ItemOps‑Simulation (Trockenlauf)</strong>" +
+          "<button class='btn' id='btnItemOpsSimClose' type='button' style='padding:8px 12px'>Schließen</button>" +
+        "</header>" +
+        "<div class='content'>" +
+          "<div class='table-wrap'>" +
+            "<table class='list'>" +
+              "<thead>" +
+                "<tr>" +
+                  "<th>Artikel</th>" +
+                  "<th>SKU</th>" +
+                  "<th>Aktuell</th>" +
+                  "<th>Pendend</th>" +
+                  "<th>Simuliert</th>" +
+                  "<th>Ops</th>" +
+                "</tr>" +
+              "</thead>" +
+              "<tbody></tbody>" +
+            "</table>" +
+          "</div>" +
+          "<p class='hint emptyMsg'>Keine offenen ItemOps, die hier noch nicht angewendet wurden.</p>" +
+        "</div>" +
+        "<footer>" +
+          "<span class='grow'></span>" +
+          "<button class='btn primary' id='btnItemOpsSimOk' type='button'>OK</button>" +
+        "</footer>";
+      document.body.appendChild(dlg);
+
+      var closeBtn = dlg.querySelector('#btnItemOpsSimClose');
+      var okBtn = dlg.querySelector('#btnItemOpsSimOk');
+      function closeDlg(){
+        try{ dlg.close(); }catch(_){}
+      }
+      if(closeBtn) closeBtn.addEventListener('click', closeDlg);
+      if(okBtn) okBtn.addEventListener('click', closeDlg);
+
+      return dlg;
+    }
+
+    function setupItemOpsSimUI(){
+      var dlg = ensureItemOpsSimDialog();
+
+      var sec = document.getElementById('secCloud');
+      if(!sec) return;
+
+      var btn = document.getElementById('btnItemOpsSim');
+      if(!btn){
+        btn = document.createElement('button');
+        btn.type = 'button';
+        btn.id = 'btnItemOpsSim';
+        btn.className = 'btn';
+        btn.textContent = 'ItemOps‑Simulation';
+        try{
+          var testBtn = document.getElementById('btnItemOpsPull');
+          if(testBtn && testBtn.parentNode){
+            if(testBtn.nextSibling){
+              testBtn.parentNode.insertBefore(btn, testBtn.nextSibling);
+            }else{
+              testBtn.parentNode.appendChild(btn);
+            }
+          }else{
+            sec.appendChild(btn);
+          }
+        }catch(_){
+          sec.appendChild(btn);
+        }
+      }
+
+      btn.addEventListener('click', function(){
+        renderItemOpsSimulation();
+        try{ dlg.showModal(); }catch(_){}
+      });
+    }
+
+    document.addEventListener('DOMContentLoaded', function(){
+      if(!window.lvDebugItemOps) return;
+      try{ setupItemOpsSimUI(); }catch(_){}
+    });
+
+    window.lvItemOpsSim = {
+      simulate: simulateItemOps,
+      render: renderItemOpsSimulation
+    };
+
+  }catch(_){}
+})();
+</script>
+
+<script>
+// v82 – ItemOps-Rebase-Hook (lokaler Abgleich, ohne Bestandsänderung)
+// Dieser Hook wird nach einem Cloud-Pull im zentralen Sync-Ablauf aufgerufen.
+// Schritt 2: einfache Konfliktlösung nur auf ItemOps-Ebene.
+// Lokale ItemOps, deren opId bereits in der Cloud-Tabelle vorhanden ist,
+// werden aus lv_item_ops_local entfernt, damit sie nicht doppelt als „offen“ gezählt werden.
+(function(){
+  try{
+    function loadJsonSafeLocal(key){
+      try{
+        var raw = localStorage.getItem(key);
+        if(!raw) return [];
+        var data = JSON.parse(raw);
+        return Array.isArray(data) ? data : [];
+      }catch(_){ return []; }
+    }
+
+    async function lvItemOpsRebaseAfterPull(){
+      try{
+        // 1) Trockenlauf-Simulation (nur für Debug / Logging)
+        var sim = (window.lvItemOpsSim && typeof window.lvItemOpsSim.simulate === 'function')
+          ? window.lvItemOpsSim.simulate
+          : null;
+        var rows = [];
+        if(sim){
+          try{ rows = sim() || []; }catch(_){ rows = []; }
+        }
+
+        if(window.lvDebugItemOps && window.console && typeof console.log === 'function'){
+          var withDelta = 0;
+          for(var i=0;i<rows.length;i++){
+            var rr = rows[i] || {};
+            if(typeof rr.pendingDelta === 'number' && rr.pendingDelta !== 0) withDelta++;
+          }
+          console.log('[lvItemOpsRebaseAfterPull] Start: %d Artikel mit offenen Deltas', withDelta);
+        }
+
+        // 2) Lokaler Abgleich lv_item_ops_local vs. lv_item_ops_cloud
+        var localOps = loadJsonSafeLocal('lv_item_ops_local');
+        var cloudOps = loadJsonSafeLocal('lv_item_ops_cloud');
+
+        if(!localOps.length || !cloudOps.length){
+          return;
+        }
+
+        var cloudOpIds = {};
+        for(var i=0;i<cloudOps.length;i++){
+          var row = cloudOps[i];
+          if(!row) continue;
+          var oid = '';
+          try{
+            if(row.opId) oid = String(row.opId);
+          }catch(_){}
+          if(!oid) continue;
+          cloudOpIds[oid] = true;
+        }
+        if(!Object.keys(cloudOpIds).length){
+          return;
+        }
+
+        var newLocal = [];
+        var removed = 0;
+        for(var j=0;j<localOps.length;j++){
+          var op = localOps[j];
+          if(!op){
+            continue;
+          }
+          var oidLocal = '';
+          try{
+            if(op.opId) oidLocal = String(op.opId);
+          }catch(_){}
+          if(oidLocal && cloudOpIds[oidLocal]){
+            removed++;
+            continue;
+          }
+          newLocal.push(op);
+        }
+
+        if(removed > 0){
+          try{
+            localStorage.setItem('lv_item_ops_local', JSON.stringify(newLocal));
+          }catch(_){}
+          if(window.lvDebugItemOps && window.console && typeof console.log === 'function'){
+            console.log('[lvItemOpsRebaseAfterPull] Lokaler Abgleich: %d ItemOps als in Cloud vorhanden erkannt und entfernt. Verbleibend lokal: %d', removed, newLocal.length);
+          }
+        }
+      }catch(e){
+        try{ console.error('lvItemOpsRebaseAfterPull error', e); }catch(_){}
+      }
+    }
+
+    // Nur registrieren, wenn noch nicht vorhanden, um andere Implementierungen nicht zu überschreiben.
+    if(typeof window.lvItemOpsRebaseAfterPull !== 'function'){
+      window.lvItemOpsRebaseAfterPull = lvItemOpsRebaseAfterPull;
+    }
+  }catch(_){}
+})();
+</script>
+
+<script>
+// v81 – Zentraler Sync-Ablauf (runFullSync) – noch nicht automatisch verwendet
+(function(){
+  try{
+    async function runFullSync(options){
+      options = options || {};
+      var mode = (options.mode || 'full').toString().toLowerCase();
+      var silent = !!options.silent;
+
+      // 'standard' verhält sich wie 'full' – für Auto‑Sync und manuellen Sync
+      var isFullLike = (mode === 'full' || mode === 'standard');
+      var doPull = (isFullLike || mode === 'pull' || mode === 'pullonly');
+      var doPush = (isFullLike || mode === 'push' || mode === 'pushonly');
+
+      try{
+        // 1) Pull aller Kern-Daten (Items, Gruppen, Mitglieder) – inkl. Pending-Rebase, wie bisher
+        if(doPull && typeof cloudPullAll === 'function'){
+          if(!silent && typeof toast === 'function'){
+            try{ toast('Sync: Cloud-Pull läuft ...'); }catch(_){}
+          }
+          await cloudPullAll();
+        }
+
+        // 2) ItemOps aus der Cloud nachladen (optional, falls konfiguriert)
+        if(doPull && typeof cloudPullItemOps === 'function'){
+          try{ await cloudPullItemOps({silent: true}); }catch(_){}
+        }
+
+        // 3) ItemOps-Rebase (falls vorhanden/aktiv)
+        if(doPull && typeof lvItemOpsRebaseAfterPull === 'function'){
+          try{ await lvItemOpsRebaseAfterPull(); }catch(_){}
+        }
+
+        // 4) Push aller Kern-Daten
+        if(doPush && typeof cloudPushAll === 'function'){
+          if(!silent && typeof toast === 'function'){
+            try{ toast('Sync: Cloud-Push läuft ...'); }catch(_){}
+          }
+          await cloudPushAll();
+        }
+
+        // 5) Outbox verarbeiten (falls vorhanden)
+        if(doPush && typeof processOutbox === 'function'){
+          try{ await processOutbox(); }catch(_){}
+        }
+
+        if(!silent && typeof toast === 'function'){
+          try{ toast('Sync: abgeschlossen'); }catch(_){}
+        }
+
+
+      }catch(e){
+        try{
+          if(window.console && console.error) console.error('runFullSync error', e);
+          if(!silent && typeof toast === 'function'){
+            toast('Sync: Fehler (Details in Konsole)');
+          }
+        }catch(_){}
+        throw e;
+      }
+    }
+
+    if(typeof window.runFullSync !== 'function'){
+      window.runFullSync = runFullSync;
+    }
+  }catch(_){}
+})();
+</script>
+
+<script>
+// v90 – Sync beim Beenden (optionale Sicherheitsfunktion)
+(function(){
+  try{
+    var SYNC_ON_EXIT_KEY = 'lv_sync_on_exit_enabled';
+    var SYNC_ON_EXIT_FLAG = 'lv_sync_on_exit_pending';
+
+    function isSyncOnExitEnabled(){
+      try{ return localStorage.getItem(SYNC_ON_EXIT_KEY) === '1'; }catch(_){ return false; }
+    }
+    function setSyncOnExitEnabled(on){
+      try{ localStorage.setItem(SYNC_ON_EXIT_KEY, on ? '1' : '0'); }catch(_){}
+    }
+    function markSyncOnNextStart(){
+      try{ localStorage.setItem(SYNC_ON_EXIT_FLAG, String(Date.now())); }catch(_){}
+    }
+    function clearSyncOnNextStart(){
+      try{ localStorage.removeItem(SYNC_ON_EXIT_FLAG); }catch(_){}
+    }
+    function hasPendingSyncFlag(){
+      try{ return !!localStorage.getItem(SYNC_ON_EXIT_FLAG); }catch(_){ return false; }
+    }
+
+    // Best-Effort-Sync, wenn die Seite verlassen wird (App darf sich trotzdem schließen)
+    function setupSyncOnExitHandler(){
+      if (window.__lvSyncOnExitHandlerInstalled) return;
+      window.__lvSyncOnExitHandlerInstalled = true;
+
+      window.addEventListener('beforeunload', function(){
+        if(!isSyncOnExitEnabled()) return;
+        // Merken, dass wir beim nächsten Start ggf. noch einmal synchronisieren wollen
+        markSyncOnNextStart();
+        try{
+          if(typeof runFullSync === 'function'){
+            // Best-Effort: wir starten den Sync, ohne auf das Ergebnis zu warten
+            runFullSync({mode:'full', silent:true});
+          }else if(typeof cloudPushAll === 'function'){
+            cloudPushAll().catch(function(){ /* Fehler sind hier erwartbar, App schließt trotzdem */ });
+          }
+        }catch(_){}
+        // WICHTIG: kein preventDefault, Tab darf ganz normal schließen
+      });
+    }
+
+    // Beim Start: falls beim letzten Beenden ein Sync angefordert war, noch einmal versuchen
+    async function runPendingStartupSync(){
+      if(!hasPendingSyncFlag()) return;
+      clearSyncOnNextStart();
+      try{
+        if(typeof runFullSync === 'function'){
+          await runFullSync({mode:'full', silent:true});
+        }else if(typeof cloudPullAll === 'function' || typeof cloudPushAll === 'function'){
+          // Minimal-Variante, falls runFullSync nicht existiert
+          if(typeof cloudPullAll === 'function'){
+            try{ await cloudPullAll(); }catch(_){}
+          }
+          if(typeof cloudPushAll === 'function'){
+            try{ await cloudPushAll(); }catch(_){}
+          }
+        }
+      }catch(_){}
+    }
+
+    document.addEventListener('DOMContentLoaded', function(){
+      try{
+        setupSyncOnExitHandler();
+
+        var sec = document.getElementById('secCloud');
+        if(!sec) return;
+
+        var chk = document.getElementById('chkSyncOnExit');
+        var auto = document.getElementById('autoSyncChk');
+        var autoRow = auto && auto.parentNode ? auto.parentNode : null;
+
+        // Gemeinsame Zeile für beide Auto-Sync-Optionen unterhalb der Hauptzeile
+        var combinedRow = document.createElement('div');
+        combinedRow.className = 'row';
+        combinedRow.style.marginTop = '8px';
+        combinedRow.style.flexWrap = 'wrap';
+        combinedRow.style.gap = '10px';
+        combinedRow.style.alignItems = 'center';
+
+        // Auto-Sync nach Aktionen nach unten verschieben
+        if(autoRow && autoRow.parentNode){
+          autoRow.parentNode.removeChild(autoRow);
+          combinedRow.appendChild(autoRow);
+        }
+
+        // Checkbox „Auto-Sync beim Schließen“ erstellen, falls noch nicht vorhanden
+        if(!chk){
+          chk = document.createElement('input');
+          chk.type = 'checkbox';
+          chk.id = 'chkSyncOnExit';
+        }
+
+        var label = chk.parentNode && chk.parentNode.tagName && chk.parentNode.tagName.toLowerCase() === 'label'
+          ? chk.parentNode
+          : null;
+
+        if(!label){
+          label = document.createElement('label');
+          label.htmlFor = 'chkSyncOnExit';
+          label.appendChild(document.createTextNode(' Auto-Sync beim Schließen'));
+        }else{
+          // Beschriftung aktualisieren, falls schon vorhanden
+          label.htmlFor = 'chkSyncOnExit';
+          label.textContent = '';
+          label.appendChild(document.createTextNode(' Auto-Sync beim Schließen'));
+        }
+
+        // Sicherstellen, dass die Checkbox im Label steckt
+        if(chk.parentNode !== label){
+          if(chk.parentNode) chk.parentNode.removeChild(chk);
+          label.insertBefore(chk, label.firstChild || null);
+        }
+
+        // Optik dem Auto-Sync-nach-Aktionen-Block anpassen
+        label.style.display = 'inline-flex';
+        label.style.alignItems = 'center';
+        label.style.gap = '6px';
+
+        combinedRow.appendChild(label);
+        sec.appendChild(combinedRow);
+
+        chk.checked = isSyncOnExitEnabled();
+        chk.addEventListener('change', function(){
+          setSyncOnExitEnabled(chk.checked);
+          try{
+            if(typeof toast === 'function'){
+              toast(chk.checked ? 'Auto-Sync beim Schließen: aktiviert' : 'Auto-Sync beim Schließen: deaktiviert');
+            }
+          }catch(_){}
+        });
+
+        // Start-Sync nur still im Hintergrund ausführen
+        runPendingStartupSync();
+      }catch(_){}
+    });
+  }catch(_){}
+})();
+</script>
+
+<script>
+// v93 – Push-Diagnose: zeige Status/Fehlertexte bei fehlgeschlagenem Cloud-Push (ohne neue Buttons)
+(function(){
+  try{
+    function toastSafe(msg){
+      try{ if(typeof toast==='function') toast(msg); }catch(_){}
+    }
+    // Wrap cloudPushAll, falls vorhanden, um detaillierte Fehler anzuzeigen
+    if (typeof window.cloudPushAll === 'function' && !window.cloudPushAll.__lvDiagWrapped){
+      var _origPushAll = window.cloudPushAll;
+      window.cloudPushAll = async function(){
+        try{
+          return await _origPushAll.apply(this, arguments);
+        }catch(e){
+          try{
+            var status = e && (e.status || e.code || e.name) || 'Fehler';
+            var msg = e && (e.message || e.detail || e.toString()) || '';
+            toastSafe('Push-Fehler: ' + status);
+            try{ console.error('Push-Fehler-Details:', e); }catch(_){}
+          }catch(_){}
+          throw e;
+        }
+      };
+      window.cloudPushAll.__lvDiagWrapped = true;
+    }
+
+    // Zusätzlich: globales Fetch-Monitoring für POST/PATCH/DELETE auf /rows/
+    if (!window.__lvFetchDiagInstalled && typeof window.fetch === 'function'){
+      window.__lvFetchDiagInstalled = true;
+      var _origFetch = window.fetch;
+      window.fetch = function(input, init){
+        try{
+          var url = (typeof input === 'string') ? input : (input && input.url) || '';
+          var method = (init && (init.method || '')).toUpperCase() || 'GET';
+          var isWriteRows = /\/rows\//.test(url) && method !== 'GET';
+          if(isWriteRows){
+            return _origFetch(input, init).then(async function(resp){
+              if(!resp.ok){
+                var bodyText = '';
+                try{ bodyText = await resp.text(); }catch(_){}
+                var info = 'HTTP ' + resp.status + ' ' + (resp.statusText||'') + '\nURL: ' + url + '\nMethode: ' + method;
+                if(bodyText){ info += '\nAntwort: ' + bodyText.slice(0,400); }
+                try{ console.error('Supabase Write-Fehler:', info); }catch(_){}
+                toastSafe('Supabase: ' + resp.status + ' beim Schreiben (Details in Konsole)');
+              }
+              return resp;
+            });
+          }
+        }catch(_){}
+        return _origFetch(input, init);
+      };
+    }
+  }catch(_){}
+})();
+</script>
+
+<script>
+// v96 – Fix: Login unberührt lassen, Push-Button nur per Capture-Layer abfangen (kein DOM-Umbau)
+(function(){
+  try{
+    function toastSafe(msg){ try{ if(typeof toast==='function') toast(msg); }catch(_){ } }
+    function $(sel){ return document.querySelector(sel); }
+
+    function installDirectPush(){
+      var btn = $('#btnPush');
+      if(!btn || btn.__lvDirectPushInstalled) return;
+      // Capture-Phase: wir fangen den Klick ab, verhindern die ursprünglichen Handler (die evtl. Pull auslösen)
+      btn.addEventListener('click', async function(ev){
+        try{
+          ev.stopImmediatePropagation();
+          ev.preventDefault();
+        }catch(_){}
+        try{
+          if (typeof cloudPushAllInternal === 'function'){
+            await cloudPushAllInternal();
+            toastSafe('Alle lokalen Daten hochgeladen');
+          } else if (typeof cloudPushAll === 'function'){
+            await cloudPushAll();
+          } else if (typeof runFullSync === 'function'){
+            await runFullSync({mode:'push'});
+          } else {
+            toastSafe('Push-Funktion nicht verfügbar');
+          }
+        }catch(e){
+          try{ console.error('DirectPush error', e); }catch(_){}
+          try{
+            if(typeof queueTask==='function'){ queueTask('pushAll'); }
+            toastSafe('Cloud nicht erreichbar – in Warteschlange abgelegt');
+          }catch(_){}
+        }
+      }, true); // capture
+      btn.__lvDirectPushInstalled = true;
+    }
+
+    document.addEventListener('DOMContentLoaded', function(){
+      try{ installDirectPush(); }catch(_){}
+    });
+  }catch(_){}
+})();
+</script>
+
+<script>
+// v97 – Schreib-Diagnose (nur Beobachtung): zeigt Status jeder Supabase-Schreibanfrage als Toast
+(function(){
+  try{
+    function toastSafe(msg){ try{ if(typeof toast==='function') toast(msg); }catch(_){ } }
+    if (!window.__lvWriteDiag97 && typeof window.fetch==='function'){
+      window.__lvWriteDiag97 = true;
+      var _origFetch = window.fetch;
+      window.fetch = function(input, init){
+        var url = (typeof input==='string') ? input : (input && input.url) || '';
+        var method = (init && (init.method||'GET')).toUpperCase();
+        var isWrite = /\/rows\//.test(url) && method !== 'GET';
+        if(!isWrite) return _origFetch(input, init);
+        return _origFetch(input, init).then(async function(resp){
+          try{
+            if(resp.ok){
+              toastSafe('Supabase: ' + resp.status + ' ' + method + ' OK');
+            }else{
+              var txt=''; try{ txt = await resp.text(); }catch(_){}
+              toastSafe('Supabase: ' + resp.status + ' ' + method + ' (Details in Konsole)');
+              try{ console.error('Supabase write error:', resp.status, method, url, txt); }catch(_){}
+            }
+          }catch(_){}
+          return resp;
+        });
+      };
+    }
+  }catch(_){}
+})();
+</script>
+
+<script>
+// v98 – Log- & Datum-Merge nach Cloud-Pull (verhindert Zurücksetzen)
+// Idee: Vor dem Pull lokalen Stand merken, nach dem Pull Logs/Daten mergen.
+(function(){
+  try{
+    function toDate(x){
+      try{
+        if(!x) return null;
+        if(x instanceof Date) return x;
+        var d = new Date(x);
+        return isNaN(d.getTime()) ? null : d;
+      }catch(_){ return null; }
+    }
+    function maxDate(a,b){
+      var da = toDate(a), db = toDate(b);
+      if(da && db) return (da > db) ? da.toISOString() : db.toISOString();
+      return (da ? da.toISOString() : (db ? db.toISOString() : null));
+    }
+    function minDate(a,b){
+      var da = toDate(a), db = toDate(b);
+      if(da && db) return (da < db) ? da.toISOString() : db.toISOString();
+      return (da ? da.toISOString() : (db ? db.toISOString() : null));
+    }
+    function normalizeLogArray(arr){
+      if(!Array.isArray(arr)) return [];
+      return arr.map(function(e){
+        if(!e || typeof e!=='object') return null;
+        var n = {
+          ts: e.ts || e.time || e.date || null,
+          type: e.type || e.t || null,
+          delta: (typeof e.delta==='number') ? e.delta : (typeof e.qty==='number'? e.qty : null),
+          opId: e.opId || e.id || null,
+          note: e.note || e.reason || null,
+          user: e.user || null
         };
-      })(origAddLog);
-      window.addLog.__lvItemOpsWrapped = true;
-    </script>
+        return n;
+      }).filter(Boolean);
+    }
+    function uniqueLogs(logsA, logsB){
+      var out = [];
+      var seen = Object.create(null);
+      function keyOf(x){
+        return (x.opId ? ('op:'+x.opId) : ('ts:'+ (x.ts||'') + '|d:' + (x.delta==null?'':x.delta) + '|t:' + (x.type||'')));
+      }
+      function pushUnique(x){
+        var k = keyOf(x);
+        if(seen[k]) return;
+        seen[k] = 1;
+        out.push(x);
+      }
+      logsA.forEach(pushUnique);
+      logsB.forEach(pushUnique);
+      // sort by ts if possible
+      out.sort(function(a,b){
+        var da = toDate(a.ts), db = toDate(b.ts);
+        if(da && db) return da - db;
+        if(da) return -1;
+        if(db) return 1;
+        return 0;
+      });
+      return out;
+    }
+
+    // Merger-Funktion: vergleicht aktuellen items[] (nach Pull) mit vorherigem Stand
+    function lvMergeLogsAndDates(prevBySku){
+      try{
+        if(!Array.isArray(window.items) || !prevBySku) return;
+        for(var i=0;i<window.items.length;i++){
+          var it = window.items[i];
+          if(!it || !it.sku) continue;
+          var prev = prevBySku[it.sku];
+          if(!prev) continue;
+
+          // Logs mergen
+          var curLogs = normalizeLogArray(it.log);
+          var oldLogs = normalizeLogArray(prev.log);
+          var mergedLogs = uniqueLogs(oldLogs, curLogs);
+          it.log = mergedLogs;
+
+          // created_at: ältestes Datum behalten
+          it.created_at = minDate(prev.created_at, it.created_at) || it.created_at || prev.created_at || null;
+          // updated_at: neuestes Datum behalten
+          it.updated_at = maxDate(prev.updated_at, it.updated_at) || it.updated_at || prev.updated_at || null;
+        }
+      }catch(e){
+        try{ console.error('lvMergeLogsAndDates error', e); }catch(_){}
+      }
+    }
+
+    // Wrapper für cloudPullAll: vor Pull snapshotten, danach mergen
+    if(typeof window.cloudPullAll === 'function' && !window.cloudPullAll.__lvMergeLogsInstalled){
+      var _origPullAll = window.cloudPullAll;
+      window.cloudPullAll = async function(){
+        var snapshot = null;
+        try{
+          if(Array.isArray(window.items)){
+            snapshot = Object.create(null);
+            for(var i=0;i<window.items.length;i++){
+              var it = window.items[i];
+              if(!it || !it.sku) continue;
+              snapshot[it.sku] = {
+                created_at: it.created_at || null,
+                updated_at: it.updated_at || null,
+                log: Array.isArray(it.log) ? JSON.parse(JSON.stringify(it.log)) : []
+              };
+            }
+          }
+        }catch(_){}
+        var res = await _origPullAll.apply(this, arguments);
+        try{ lvMergeLogsAndDates(snapshot); }catch(_){}
+        return res;
+      };
+      window.cloudPullAll.__lvMergeLogsInstalled = true;
+    }
+
+  }catch(e){
+    try{ console.error('v98 merge install error', e); }catch(_){}
+  }
+})();
+</script>
+
+<script>
+// v99 – Log-Dedupe verbessert: opId priorisieren, sonst Sekundengenauigkeit + Delta/Typ;
+// unterdrückt doppelte 'edit'(+0) neben echter Buchung mit gleichem Zeitstempel.
+(function(){
+  try{
+    function toDate(x){
+      try{
+        if(!x) return null;
+        if(x instanceof Date) return x;
+        var d = new Date(x);
+        return isNaN(d.getTime()) ? null : d;
+      }catch(_){ return null; }
+    }
+    function tsToSec(x){
+      var d = toDate(x);
+      if(!d) return null;
+      return Math.floor(d.getTime()/1000); // Sekundengenauigkeit
+    }
+    function isoMax(a,b){
+      var da = toDate(a), db = toDate(b);
+      if(da && db) return (da > db) ? da.toISOString() : db.toISOString();
+      return (da ? da.toISOString() : (db ? db.toISOString() : null));
+    }
+    function isoMin(a,b){
+      var da = toDate(a), db = toDate(b);
+      if(da && db) return (da < db) ? da.toISOString() : db.toISOString();
+      return (da ? da.toISOString() : (db ? db.toISOString() : null));
+    }
+    function normalizeLogArray(arr){
+      if(!Array.isArray(arr)) return [];
+      return arr.map(function(e){
+        if(!e || typeof e!=='object') return null;
+        var type = e.type || e.t || null;
+        var delta = (typeof e.delta==='number') ? e.delta : (typeof e.qty==='number'? e.qty : (e.delta===0?0:null));
+        var ts = e.ts || e.time || e.date || null;
+        var o = {
+          ts: ts,
+          tsSec: tsToSec(ts),
+          type: type,
+          delta: delta,
+          opId: e.opId || e.id || null,
+          note: e.note || e.reason || null,
+          user: e.user || null
+        };
+        return o;
+      }).filter(Boolean);
+    }
+    function uniqueLogs(logsA, logsB){
+      // Vereinfachtes Dedupe:
+      // - opId hat Vorrang und wird strikt dedupliziert
+      // - ohne opId wird nur dedupliziert, wenn alle wesentlichen Felder exakt übereinstimmen
+      //   (ts, type, delta, note, user). Damit bleiben getrennte Aktionen auch dann erhalten,
+      //   wenn sie in der gleichen Sekunde stattfinden.
+      var out = [];
+      var seenByOpId = Object.create(null);
+      var seenByHash = Object.create(null);
+
+      function hashLog(x){
+        if(!x || typeof x !== 'object') return '';
+        var ts = (x.ts == null ? '' : String(x.ts));
+        var t  = (x.type == null ? '' : String(x.type));
+        var d  = (x.delta == null ? '' : String(x.delta));
+        var n  = (x.note == null ? '' : String(x.note));
+        var u  = (x.user == null ? '' : String(x.user));
+        return 'ts:'+ts+'|t:'+t+'|d:'+d+'|n:'+n+'|u:'+u;
+      }
+
+      function pushFrom(arr){
+        if(!Array.isArray(arr)) return;
+        for(var i=0;i<arr.length;i++){
+          var x = arr[i];
+          if(!x || typeof x !== 'object') continue;
+          if(x.opId){
+            if(seenByOpId[x.opId]) continue;
+            seenByOpId[x.opId] = 1;
+            out.push(x);
+          }else{
+            var h = hashLog(x);
+            if(seenByHash[h]) continue;
+            seenByHash[h] = 1;
+            out.push(x);
+          }
+        }
+      }
+
+      pushFrom(logsA);
+      pushFrom(logsB);
+
+      out.sort(function(a,b){
+        var da = toDate(a && a.ts), db = toDate(b && b.ts);
+        if(da && db) return da - db;
+        if(da) return -1;
+        if(db) return 1;
+        return 0;
+      });
+      return out;
+    }
+
+    function lvMergeLogsAndDates(prevBySku){
+      try{
+        if(!Array.isArray(window.items) || !prevBySku) return;
+        for(var i=0;i<window.items.length;i++){
+          var it = window.items[i];
+          if(!it || !it.sku) continue;
+          var prev = prevBySku[it.sku];
+          if(!prev) continue;
+          var curLogs = normalizeLogArray(it.log);
+          var oldLogs = normalizeLogArray(prev.log);
+          it.log = uniqueLogs(oldLogs, curLogs);
+          it.created_at = isoMin(prev.created_at, it.created_at) || it.created_at || prev.created_at || null;
+          it.updated_at = isoMax(prev.updated_at, it.updated_at) || it.updated_at || prev.updated_at || null;
+        }
+      }catch(e){
+        try{ console.error('lvMergeLogsAndDates v99 error', e); }catch(_){}
+      }
+    }
+    if(typeof window.cloudPullAll === 'function' && !window.cloudPullAll.__lvMergeLogsInstalled99){
+      var _origPullAll = window.cloudPullAll;
+      window.cloudPullAll = async function(){
+        var snapshot = null;
+        try{
+          if(Array.isArray(window.items)){
+            snapshot = Object.create(null);
+            for(var i=0;i<window.items.length;i++){
+              var it = window.items[i];
+              if(!it || !it.sku) continue;
+              snapshot[it.sku] = {
+                created_at: it.created_at || null,
+                updated_at: it.updated_at || null,
+                log: Array.isArray(it.log) ? JSON.parse(JSON.stringify(it.log)) : []
+              };
+            }
+          }
+        }catch(_){}
+        var res = await _origPullAll.apply(this, arguments);
+        try{ lvMergeLogsAndDates(snapshot); }catch(_){}
+        return res;
+      };
+      window.cloudPullAll.__lvMergeLogsInstalled99 = true;
+    }
+  }catch(_){}
+})();
+</script>
+
+<script>
+// v100 – Full Sync: Push-first (verhindert Zurücksetzen lokaler Änderungen)
+// Verhalten:
+// - runFullSync({mode:'full'}) macht jetzt zuerst PUSH, danach PULL.
+// - Wenn PUSH fehlschlägt (offline/Fehler): Pull wird bewusst übersprungen, damit lokale Daten nicht überschrieben werden.
+// - runFullSync('push') / runFullSync('pull') bleiben unverändert.
+(function(){
+  try{
+    function toastSafe(msg){ try{ if(typeof toast==='function') toast(msg); }catch(_){ }
+    }
+    if (typeof window.runFullSync === 'function' && !window.runFullSync.__lvPushFirst){
+      var _origRunFullSync = window.runFullSync;
+      window.runFullSync = async function(options){
+        options = options || {};
+        var mode = String(options.mode||'full').toLowerCase();
+        var silent = !!options.silent;
+
+        // Nur 'full' bekommt das neue Verhalten. Andere Modi bleiben 1:1.
+        if(mode !== 'full'){
+          return _origRunFullSync.apply(this, arguments);
+        }
+
+        // 1) PUSH zuerst
+        var pushOk = true;
+        try{
+          // Achtung: In der aktuellen Supabase‑Variante soll *nicht* mehr das alte
+          // Baserow-cloudPushAllInternal verwendet werden, weil es mit Supabase
+          // nicht kompatibel ist und u.a. die Meldung "Items‑Tabelle fehlt"
+          // auslöst. Deshalb rufen wir hier direkt die öffentliche
+          // Supabase‑Funktion cloudPushAll auf und fallen nur noch auf
+          // processOutbox() zurück.
+          if(typeof cloudPushAll === 'function'){
+            await cloudPushAll();
+          }else if(typeof processOutbox === 'function'){
+            // Fallback: nur Outbox versuchen
+            await processOutbox();
+          }
+        }catch(e){
+          pushOk = false;
+          try{ console.error('FullSync Push-first: Push failed, skip pull', e); }catch(_){}
+          if(!silent){
+            toastSafe('Full Sync: Push fehlgeschlagen – Pull übersprungen (offline?)');
+          }
+        }
+
+        // 2) Wenn Push erfolgreich: Pull nachziehen
+        if(pushOk){
+          try{
+            // Re-use der bestehenden Pull-Logik des Originals
+            return await _origRunFullSync.call(this, {mode:'pull', silent: silent});
+          }catch(e2){
+            try{ console.error('FullSync Push-first: Pull error', e2); }catch(_){}
+            if(!silent) toastSafe('Full Sync: Pull-Fehler (Details in Konsole)');
+            throw e2;
+          }
+        }else{
+          // Push war nicht ok -> Pull bewusst ausgelassen
+          return;
+        }
+      };
+      window.runFullSync.__lvPushFirst = true;
+    }
+  }catch(_){}
+})();
+</script>
+
+<!-- v19 – Cloud-Persistenz für Warnungen & Mindestbestände + selektiver Sync + Push-first -->
+<script>
+(function(){
+  'use strict';
+
+  function toastSafe(m){ try{ if(typeof toast==='function') toast(m); }catch(_){ } }
+
+  // ===== Sichtbarkeit Sync-Optionen nur mit sync_manage_options =====
+  function enforceSyncOptionsVisibility(){
+    try{
+      var el = document.getElementById('syncOptionsDetails');
+      if(!el) return;
+      var can = !!(window.currentPerms && window.currentPerms.sync_manage_options);
+      el.style.display = can ? '' : 'none';
+    }catch(_){}
+  }
+  document.addEventListener('DOMContentLoaded', enforceSyncOptionsVisibility);
+
+  // ===== Standard-/Voll-Sync Auswahl lesen =====
+  function readSelection(kind){
+    try{
+      if(kind==='standard'){
+        return {
+          material: !!(document.getElementById('syncStdMaterialChk') && document.getElementById('syncStdMaterialChk').checked)
+        };
+      }else{
+        return {
+          material: !!(document.getElementById('syncFullMaterialChk') && document.getElementById('syncFullMaterialChk').checked),
+          groups:   !!(document.getElementById('syncFullGroupsChk') && document.getElementById('syncFullGroupsChk').checked),
+          members:  !!(document.getElementById('syncFullMembersChk') && document.getElementById('syncFullMembersChk').checked),
+          appcfg:   !!(document.getElementById('syncFullAppCfgChk') && document.getElementById('syncFullAppCfgChk').checked)
+        };
+      }
+    }catch(_){}
+    return { material:true };
+  }
+
+  async function cloudPushSelected(sel){
+    sel = sel || {};
+    if(sel.material){
+      if(typeof pushItemsOnly==='function'){ await pushItemsOnly(); }
+      else if(typeof cloudPushAll==='function'){ await cloudPushAll(); }
+      if(typeof processOutbox==='function'){ try{ await processOutbox(); }catch(_){ } }
+    }
+    if(sel.groups && typeof pushGroupsOnly==='function'){ await pushGroupsOnly(); }
+    if(sel.members && typeof pushMembersOnly==='function'){ await pushMembersOnly(); }
+    // Warnungs-/Schwellwert-Konfiguration wird immer beim Voll‑Sync mitgeschoben
+    if(sel.mode === 'full' && typeof pushAlertsSettings==='function'){ await pushAlertsSettings(); }
+  }
+
+  // Auto‑Sync → Stand// Auto‑Sync → Standard-Sync (silent)
+  if (typeof window.maybeCloudPushAll === 'function' && !window.maybeCloudPushAll.__lvWrapStd){
+    var __origMaybe = window.maybeCloudPushAll;
+    window.maybeCloudPushAll = function(){
+      try{
+        var cfg = readBrConfig();
+        if(cfg && cfg.autoSync && typeof window.runFullSync==='function'){
+          return window.runFullSync({ mode:'standard', silent:true });
+        }
+      }catch(_){}
+      try{ return __origMaybe.apply(this, arguments); }catch(_){}
+    };
+    window.maybeCloudPushAll.__lvWrapStd = true;
+  }
+
+  // Manuell ⇅ → Standard
+  if (typeof window.manualSync === 'function' && !window.manualSync.__lvStd){
+    var __origManual = window.manualSync;
+    window.manualSync = async function(){
+      if (typeof has==='function' && !has('sync_basic')){ toastSafe('Kein Recht für Standard‑Sync (sync_basic)'); return; }
+      var b = document.getElementById('btnManualPush'); var prev;
+      if(b){ if(b.disabled) return; b.disabled = true; prev = b.textContent; b.textContent = '...'; }
+      try{
+        await window.runFullSync({ mode:'standard', silent:false });
+        toastSafe('Sync abgeschlossen');
+      }catch(e){
+        toastSafe('Sync fehlgeschlagen');
+      }finally{
+        if(b){ b.disabled = false; b.textContent = (typeof prev!=='undefined' ? prev : '⇅'); }
+      }
+    };
+    window.manualSync.__lvStd = true;
+  }
+
+  // runFullSync Push-first + Auswahl
+  if (typeof window.runFullSync === 'function' && !window.runFullSync.__lvSelPushFirst){
+    var _origRun = window.runFullSync;
+    window.runFullSync = async function(opts){
+      opts = opts || {};
+      var mode = String(opts.mode||'full').toLowerCase();
+      var silent = !!opts.silent;
+      var isStandard = (mode==='standard');
+      var isFull = (mode==='full');
+
+      var sel = readSelection(isStandard ? 'standard' : 'full');
+      var doPush = (isStandard || isFull || mode==='push' || mode==='pushonly');
+
+      // Rechte
+      try{
+        if(isStandard && typeof has==='function' && !has('sync_basic')){ if(!silent) toastSafe('Kein Recht für Standard‑Sync'); return; }
+        if(!isStandard && (isFull || mode==='pull' || mode==='push' || mode==='pullonly' || mode==='pushonly')){
+          if(typeof has==='function' && !has('sync_advanced')){ if(!silent) toastSafe('Kein Recht für Voll‑Sync'); return; }
+        }
+      }catch(_){}
+
+      if(isStandard || isFull){
+        var pushOk = true;
+        if(doPush){
+          try{ await cloudPushSelected(sel); }
+          catch(e){ pushOk=false; if(!silent) toastSafe('Push fehlgeschlagen'); try{ console && console.error && console.error(e);}catch(_){ } }
+        }
+        if(!pushOk && (mode==='push' || mode==='pushonly')){ return; }
+        try{ await cloudPullSelected(sel); }catch(_){ }
+        return;
+      }
+
+      if(mode==='pull' || mode==='pullonly'){ return cloudPullSelected(sel); }
+      if(mode==='push' || mode==='pushonly'){ return cloudPushSelected(sel); }
+
+      return _origRun.apply(this, arguments);
+    };
+    window.runFullSync.__lvSelPushFirst = true;
+  }
+
+})(); 
+</script>
+</script>
+
+<!-- v20 – Alerts: Scope/Owner/GroupMask UI + Cloud-Bindung + Sichtbarkeits-Gating -->
+<script>
+(function(){
+  'use strict';
+
+  function toastSafe(m){ try{ if(typeof toast==='function') toast(m); }catch(_){ } }
+  function readLS(k, def){ try{ var r=localStorage.getItem(k); return r?JSON.parse(r):def; }catch(_){ return def; } }
+  function readAppCache(){ try{ return JSON.parse(localStorage.getItem('lv_app_settings_cache')||'{}') }catch(_){ return {} } }
+  function writeAppCache(obj){ try{ localStorage.setItem('lv_app_settings_cache', JSON.stringify(obj||{})) }catch(_){ } }
+
+  function getGroups(){
+    var arr = readLS((typeof groupsKey==='string'?groupsKey:'lagerverwaltung_groups_v3'), []);
+    return Array.isArray(arr) ? arr : [];
+  }
+  function getMembers(){
+    var arr = readLS((typeof membersKey==='string'?membersKey:'lagerverwaltung_members_v2'), []);
+    return Array.isArray(arr) ? arr : [];
+  }
+
+  // === Hydrate UI ===
+  function hydrateAlertsOptionsUI(){
+    try{
+      var ownerSel = document.getElementById('alertsOwner');
+      var groupWrap = document.getElementById('alertsGroupMask');
+      if(!ownerSel || !groupWrap) return;
+
+      // Owner list from members (username)
+      var mem = getMembers();
+      ownerSel.innerHTML = '';
+      var optDefault = document.createElement('option'); optDefault.value=''; optDefault.textContent='— auswählen —'; ownerSel.appendChild(optDefault);
+      mem.forEach(function(m){
+        var o = document.createElement('option');
+        o.value = (m.username||'').trim();
+        o.textContent = (m.username||'').trim() + (m.group_id ? ('  ('+m.group_id+')') : '');
+        ownerSel.appendChild(o);
+      });
+
+      // Group mask checkboxes (by group name)
+      groupWrap.innerHTML = '<div class="hint">Wähle, welche Gruppen Warnungen sehen dürfen.</div>';
+      var gr = getGroups();
+      gr.forEach(function(g){
+        var row = document.createElement('label');
+        row.className = 'row perm-row';
+        var inp = document.createElement('input');
+        inp.type = 'checkbox';
+        inp.className = 'perm-chk';
+        inp.dataset.group = (g.name||'').trim();
+        row.appendChild(inp);
+        var span = document.createElement('span'); span.textContent = ' '+(g.name||'—'); row.appendChild(span);
+        groupWrap.appendChild(row);
+      });
+
+      // Load current values from cache (pulled zuvor durch pullAppSettingsKeys in v19)
+      var cache = readAppCache();
+      var scope = (cache && cache.alerts_scope) ? String(cache.alerts_scope) : 'global';
+      var owner = (cache && cache.alerts_owner) ? String(cache.alerts_owner||'') : (window.currentUserEmail||'');
+      var mask = (cache && cache.alerts_group_mask) ? cache.alerts_group_mask : null;
+      if(!Array.isArray(mask)){
+        // Default: Gruppen mit view_alerts true
+        var def = []; (getGroups()||[]).forEach(function(g){
+          try{
+            var p = g.perms || g.permissions || {};
+            if(p.view_alerts) def.push(g.name);
+          }catch(_){}
+        });
+        mask = def;
+      }
+
+      // Set radios
+      var rLocal = document.getElementById('alertsScopeLocal');
+      var rGlobal = document.getElementById('alertsScopeGlobal');
+      if(scope==='local'){ rLocal.checked = true; rGlobal.checked=false; }
+      else { rGlobal.checked=true; rLocal.checked=false; }
+      // Set owner
+      ownerSel.value = owner || '';
+      // Set group mask
+      Array.prototype.slice.call(groupWrap.querySelectorAll('input[type=checkbox]')).forEach(function(cb){
+        cb.checked = Array.isArray(mask) ? (mask.indexOf(cb.dataset.group) !== -1) : false;
+      });
+
+      // Toggle owner/mask visibility based on scope
+      toggleAlertsScopeUi();
+    }catch(e){ console && console.warn && console.warn('hydrateAlertsOptionsUI failed', e); }
+  }
+
+  // UI toggle
+  function toggleAlertsScopeUi(){
+    var rLocal = document.getElementById('alertsScopeLocal');
+    var ownerRow = document.getElementById('alertsOwnerRow');
+    var groupWrap = document.getElementById('alertsGroupMask');
+    var localOn = !!(rLocal && rLocal.checked);
+    if(ownerRow) ownerRow.style.display = localOn ? '' : 'none';
+    if(groupWrap) groupWrap.closest('.grid').style.display = localOn ? 'none' : '';
+  }
+  document.addEventListener('change', function(e){
+    if(e && e.target && (e.target.id==='alertsScopeLocal' || e.target.id==='alertsScopeGlobal')){
+      toggleAlertsScopeUi();
+    }
+  });
+
+  // Save settings via upsertAppSetting()
+  async function saveAlertsOptionsFromUI(){
+    try{
+      var rLocal = document.getElementById('alertsScopeLocal');
+      var scope = (rLocal && rLocal.checked) ? 'local' : 'global';
+      var owner = (document.getElementById('alertsOwner')||{}).value || (window.currentUserEmail||'');
+      var mask = Array.prototype.slice.call(document.querySelectorAll('#alertsGroupMask input[type=checkbox]')).filter(function(cb){ return cb.checked }).map(function(cb){ return cb.dataset.group });
+
+      // Persist to cloud (v19 helpers)
+      if(typeof upsertAppSetting === 'function'){
+        await upsertAppSetting('alerts_scope', scope);
+        await upsertAppSetting('alerts_owner', owner);
+        await upsertAppSetting('alerts_group_mask', mask);
+      }
+      // Update cache
+      var cache = readAppCache(); cache.alerts_scope = scope; cache.alerts_owner = owner; cache.alerts_group_mask = mask; writeAppCache(cache);
+    }catch(e){ console && console.warn && console.warn('saveAlertsOptionsFromUI failed', e); }
+  }
+
+  // Add hooks to Settings open/save
+  try{
+    var btnMenu = document.getElementById('btnMenu');
+    if(btnMenu && !btnMenu.__alertsHydrate){
+      btnMenu.addEventListener('click', function(){ try{ hydrateAlertsOptionsUI(); }catch(_){ } }, true);
+      btnMenu.__alertsHydrate = true;
+    }
+  }catch(_){}
+  try{
+    var btnOk = document.getElementById('btnSettingsOk');
+    if(btnOk && !btnOk.__alertsSave){
+      btnOk.addEventListener('click', function(){ try{ saveAlertsOptionsFromUI(); }catch(_){ } }, true);
+      btnOk.__alertsSave = true;
+    }
+  }catch(_){}
+
+  // ===== Sichtbarkeits-Gating für Warnungen (Dialog & Popup) =====
+  function canSeeAlerts(){
+    try{
+      // Basic permission
+      if (typeof has==='function' && !has('view_alerts')) return false;
+
+      var cache = readAppCache();
+      var scope = (cache && cache.alerts_scope) ? String(cache.alerts_scope) : 'global';
+      var owner = (cache && cache.alerts_owner) ? String(cache.alerts_owner||'') : '';
+      var mask = (cache && cache.alerts_group_mask) ? cache.alerts_group_mask : null;
+      var groupName = (window.currentGroupName || '').trim();
+
+      if(scope === 'local'){
+        var me = (window.currentUserEmail||'').trim();
+        if(owner && me) return me === owner; // nur Besitzer
+        return true; // Fallback: wenn kein Owner gesetzt, zeige dem aktuellen Benutzer
+      }else{
+        // global + Gruppenmaske
+        if(Array.isArray(mask) && mask.length){
+          if(!groupName) return false;
+          return mask.indexOf(groupName) !== -1;
+        }
+        return true; // keine Maske hinterlegt -> sichtbar
+      }
+    }catch(_){}
+    return true;
+  }
+
+  // Wrap openAlerts (Dialog)
+  (function(){
+    var link = document.getElementById('openAlerts');
+    if(link && !link.__alertsGate){
+      link.addEventListener('click', function(ev){
+        try{
+          if(!canSeeAlerts()){
+            ev && ev.preventDefault();
+            toastSafe('Keine Warnungen für diese Gruppe vorgesehen');
+            return false;
+          }
+        }catch(_){}
+      }, true);
+      link.__alertsGate = true;
+    }
+  })();
+
+  // Wrap showWarnPopup (automatische Popup-Warnungen)
+  (function(){
+    if (typeof window.showWarnPopup === 'function' && !window.showWarnPopup.__alertsGate){
+      var _orig = window.showWarnPopup;
+      window.showWarnPopup = function(){
+        try{
+          if(!canSeeAlerts()) return; // Popup komplett unterdrücken
+        }catch(_){}
+        return _orig.apply(this, arguments);
+      };
+      window.showWarnPopup.__alertsGate = true;
+    }
+  })();
+
+  // Optional: Badge/Status etc. anpassen – bewusst weggelassen (reines Gating)
+
+})();
+</script>
+
+<script>
+(function(){
+  try{
+    var btnMenu = document.getElementById('btnMenu');
+    if(btnMenu && !btnMenu.__alertsPullOnOpen){
+      btnMenu.addEventListener('click', function(){
+        try{
+          if(typeof pullAppSettingsKeys === 'function'){
+            pullAppSettingsKeys(['alerts_scope','alerts_owner','alerts_group_mask']).then(function(){
+              try{ hydrateAlertsOptionsUI(); }catch(_){ }
+            });
+          }
+        }catch(_){ }
+      }, true);
+      btnMenu.__alertsPullOnOpen = true;
+    }
+  }catch(_){ }
+})();
+</script>
+
+
+<script>
+(function(){
+  try {
+    // Toast utility (idempotent)
+    function ensureToastContainer(){
+      var id = "lv-toast-container";
+      var el = document.getElementById(id);
+      if(!el){
+        el = document.createElement("div");
+        el.id = id;
+        el.style.position = "fixed";
+        el.style.right = "16px";
+        el.style.bottom = "16px";
+        el.style.zIndex = "99999";
+        el.style.maxWidth = "60vw";
+        document.body.appendChild(el);
+      }
+      return el;
+    }
+    function showToast(msg){
+      var cont = ensureToastContainer();
+      var n = document.createElement("div");
+      n.setAttribute("role","status");
+      n.style.padding = "10px 14px";
+      n.style.marginTop = "8px";
+      n.style.borderRadius = "8px";
+      n.style.boxShadow = "0 4px 16px rgba(0,0,0,0.12)";
+      n.style.background = "#111";
+      n.style.color = "#fff";
+      n.style.fontFamily = "system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif";
+      n.style.fontSize = "14px";
+      n.style.lineHeight = "1.35";
+      n.textContent = msg;
+      cont.appendChild(n);
+      setTimeout(function(){ if(n && n.parentNode){ n.parentNode.removeChild(n); } }, 6000);
+    }
+
+    // Only patch once
+    if(!window.__lvFullSyncReportPatched){
+      window.__lvFullSyncReportPatched = true;
+      var _runFullSync = window.runFullSync;
+      if(typeof _runFullSync === "function"){
+        window.runFullSync = async function(opts){
+          opts = opts || {};
+          var mode = opts.mode || "standard";
+          var silent = !!opts.silent;
+          var beforeOutbox = 0;
+          try {
+            // Try to read current outbox length if helper present
+            if (typeof window.getOutboxLength === "function") {
+              beforeOutbox = window.getOutboxLength();
+            } else if (Array.isArray(window.__lvOutbox)) {
+              beforeOutbox = window.__lvOutbox.length;
+            }
+          } catch(e){ /* ignore */ }
+
+          var res, err;
+          try {
+            res = await _runFullSync(opts);
+          } catch(e) {
+            err = e;
+          }
+
+          try {
+            // Compose report only for non-standard modes & not silent
+            if(!silent && (mode === "full" || mode === "push" || mode === "pull")){
+              var afterOutbox = beforeOutbox;
+              try {
+                if (typeof window.getOutboxLength === "function") {
+                  afterOutbox = window.getOutboxLength();
+                } else if (Array.isArray(window.__lvOutbox)) {
+                  afterOutbox = window.__lvOutbox.length;
+                }
+              } catch(e){ /* ignore */ }
+              var pushed = Math.max(0, beforeOutbox - afterOutbox);
+
+              // Pull counters if available
+              var itemsCount = (Array.isArray(window.currentItems) ? window.currentItems.length : (window.__items && window.__items.length) || null);
+              var groupsCount = (Array.isArray(window.currentGroups) ? window.currentGroups.length : null);
+              var membersCount = (Array.isArray(window.currentMembers) ? window.currentMembers.length : null);
+
+              var parts = [];
+              parts.push("Push: " + (pushed != null ? pushed : "?"));
+              if(itemsCount != null) parts.push("Items: " + itemsCount);
+              if(groupsCount != null) parts.push("Gruppen: " + groupsCount);
+              if(membersCount != null) parts.push("Benutzer: " + membersCount);
+
+              if(err){
+                showToast("Full-Sync fehlgeschlagen – " + (parts.join(" · ") || ""));
+              } else {
+                showToast("Full-Sync abgeschlossen – " + (parts.join(" · ") || ""));
+              }
+            }
+          } catch(e){ /* toast must not break sync */ }
+
+          if(err) throw err;
+          return res;
+        };
+      }
+    }
+  } catch(e){ /* last-resort guard */ }
+})();
+</script>
+
+<script>
+document.addEventListener('DOMContentLoaded', function(){
+  try{
+    var n = document.getElementById('btnGroupNew');
+    var d = document.getElementById('btnGroupDelete');
+    if (n && !n.__wired){ n.addEventListener('click', createNewGroup); n.__wired = true; }
+    if (d && !d.__wired){ d.addEventListener('click', deleteCurrentGroup); d.__wired = true; }
+    var allowed = canManageGroups();
+    if (n) n.style.display = allowed ? '' : 'none';
+    if (d) d.style.display = allowed ? '' : 'none';
+  }catch(_){}
+});
+</script>
+<script>
+document.addEventListener('DOMContentLoaded', function(){
+  try{
+    var n = document.getElementById('btnGroupNew');
+    var d = document.getElementById('btnGroupDelete');
+    if (n && !n.__wired){ n.addEventListener('click', createNewGroup); n.__wired = true; }
+    if (d && !d.__wired){ d.addEventListener('click', deleteCurrentGroup); d.__wired = true; }
+    var allowed = canManageGroups();
+    if (n) n.style.display = allowed ? '' : 'none';
+    if (d) d.style.display = allowed ? '' : 'none';
+  }catch(_){}
+});
+</script>
+<script>
+// Gate: darf Outbox/Sync auslösen? (sync_basic oder sync_advanced oder Admin/Lokaladmin)
+function canSyncBasicOrAdvanced(){
+  try{
+    if (typeof isAdmin==='function' && isAdmin()) return true;
+    if (typeof has==='function' && (has('sync_basic') || has('sync_advanced'))) return true;
+    var v = String(localStorage.getItem('lv_admin')||'').toLowerCase();
+    if (v==='1' || v==='true' || v==='yes') return true;
+  }catch(_){}
+  return false;
+}
+</script>
+<script>
+document.addEventListener('DOMContentLoaded', function(){
+  try{
+    var retry = document.getElementById('btnRetryOutbox');
+    var banner = document.getElementById('queueBanner');
+    var sendNow = document.getElementById('queueSendNow');
+    var _apply = function(){
+      var raw = localStorage.getItem(outboxKey)||'[]'; var arr=[]; try{arr=JSON.parse(raw)}catch(_){arr=[]}
+      var outboxCount = Array.isArray(arr)?arr.length:0;
+      var can = canSyncBasicOrAdvanced();
+      if (retry) retry.style.display = (outboxCount>0 && can) ? '' : 'none';
+      if (banner) banner.style.display = (outboxCount>0 && can) ? '' : 'none';
+      if (sendNow) sendNow.disabled = !can;
+    };
+    _apply();
+    window.addEventListener('storage', function(e){ if (e && e.key===outboxKey) _apply(); });
+  }catch(_){}
+});
+function queueSendNowClick(){
+  if (!canSyncBasicOrAdvanced()){ toast('Keine Berechtigung für Synchronisation'); return; }
+  try{ if (typeof processOutbox==='function') processOutbox(); }catch(e){ if(window.console) console.error(e); }
+}
+</script>
+<script>
+// Fallback-Delegation: falls Handler verloren geht
+document.addEventListener('click', function __grpSaveDelegation(e){
+  try{
+    var t = e.target;
+    if (!t) return;
+    if (t.id === 'btnSaveGroup'){
+      if (typeof saveCurrentGroup === 'function') saveCurrentGroup();
+    }
+  }catch(_){}
+});
+</script>
+<script>
+// --- Buchungs-Schnellsuche (Name/SKU) ---
+(function(){
+  function nrm(v){ return String(v||'').toLowerCase().trim(); }
+  function bookBuildOptions(list){
+    try{
+      var sel = document.getElementById('bookItem');
+      if (!sel) return;
+      sel.innerHTML = '';
+      (list||[]).forEach(function(it){
+        if(!it) return;
+        var opt = document.createElement('option');
+        opt.value = it.id;
+        var qty = Number(it.qty)||0;
+        var sku = it.sku ? ' ('+it.sku+')' : '';
+        opt.textContent = (it.name||'') + sku + ' · Bestand: ' + qty;
+        sel.appendChild(opt);
+      });
+    }catch(_){}
+  }
+  function bookApplyFilter(){
+    try{
+      var q = nrm(document.getElementById('bookSearch') && document.getElementById('bookSearch').value);
+      if (!q){ bookBuildOptions(window.items||[]); return; }
+      var src = Array.isArray(window.items) ? window.items : [];
+      var filtered = src.filter(function(it){
+        return nrm(it && it.name).indexOf(q) !== -1
+            || nrm(it && it.sku).indexOf(q) !== -1
+            || String(it && it.id).indexOf(q) !== -1;
+      });
+      bookBuildOptions(filtered);
+      // First result selected for Enter→focus
+      var sel = document.getElementById('bookItem');
+      if (sel && sel.options.length){ sel.value = sel.options[0].value; }
+    }catch(_){}
+  }
+  document.addEventListener('DOMContentLoaded', function(){
+    try{
+      var s = document.getElementById('bookSearch');
+      var sel = document.getElementById('bookItem');
+      if (s){
+        s.addEventListener('input', bookApplyFilter);
+        s.addEventListener('keydown', function(e){
+          if (e.key === 'Enter'){
+            e.preventDefault();
+            if (sel && sel.options.length){ sel.focus(); }
+          }
+        });
+      }
+      // Beim Öffnen des Buchungsdialogs (Buttons) Suchfeld zurücksetzen
+      var btnIn = document.getElementById('btnBookIn');
+      var btnOut = document.getElementById('btnBookOut');
+      var reset = function(){ if(s){ s.value=''; } };
+      if (btnIn) btnIn.addEventListener('click', reset);
+      if (btnOut) btnOut.addEventListener('click', reset);
+    }catch(_){}
+  });
+  // Exponieren für manuelles Triggern (optional)
+  window.bookApplyFilter = bookApplyFilter;
+})();
+</script>
+
+<script id="lv-pw-ux-v006">
+(function(){
+  'use strict';
+  var MIN_PW_LEN = 4;
+
+  function $(id){ return document.getElementById(id); }
+  function text(el, s){ if (el) el.textContent = s; }
+
+  // toast fallback (non-intrusive)
+  window.lvToast = window.lvToast || function(msg, ms){
+    try{
+      var el = $('toast');
+      if(!el){ alert(String(msg)); return; }
+      text(el, String(msg));
+      el.classList.add('show');
+      setTimeout(function(){ el.classList.remove('show'); }, ms || 1800);
+    }catch(e){ try{console.error(e);}catch(_){} }
+  };
+
+  function isValidPw(pw){ return String(pw||'').length >= MIN_PW_LEN; }
+
+  // --- LOGIN ---
+  function handleLoginClick(e){
+    try{
+      var u = ($('loginEmail') && $('loginEmail').value || '').trim();
+      var p = ($('loginPass') && $('loginPass').value || '');
+      if(!u){
+        e.preventDefault(); e.stopImmediatePropagation();
+        lvToast('Bitte Benutzernamen eingeben.');
+        if($('loginEmail')) $('loginEmail').focus();
+        return;
+      }
+      if(!isValidPw(p)){
+        e.preventDefault(); e.stopImmediatePropagation();
+        lvToast('Passwort zu kurz (min. 4 Zeichen).');
+        if($('loginPass')){ $('loginPass').focus(); $('loginPass').select && $('loginPass').select(); }
+        return;
+      }
+      // ansonsten: durchlassen zum bestehenden Handler
+    }catch(err){ try{console.error(err)}catch(_){} }
+  }
+
+  function bindLogin(){
+    var btn = $('btnLoginGo');
+    if(btn && !btn._lv_pw_guard){
+      btn.addEventListener('click', handleLoginClick, true); // capture: vor evtl. bestehendem Handler
+      btn._lv_pw_guard = true;
+    }
+    var le = $('loginEmail'), lp = $('loginPass');
+    function onEnter(ev){
+      if(ev && ev.key === 'Enter'){
+        ev.preventDefault();
+        var b = $('btnLoginGo');
+        if(b) b.click();
+      }
+    }
+    if(le && !le._lv_enter){ le.addEventListener('keydown', onEnter); le._lv_enter = true; }
+    if(lp && !lp._lv_enter){ lp.addEventListener('keydown', onEnter); lp._lv_enter = true; }
+  }
+
+  // --- Konto: eigenes Passwort ändern ---
+  function bindAccountPw(){
+    var pw1 = $('accPwNew');
+    var pw2 = $('accPwRepeat');
+    var show = $('accPwShow');
+    var gen = $('accPwGen');
+    var save = $('accPwSave');
+
+    if(show && !show._lv_bind){
+      show.addEventListener('change', function(){
+        var t = show.checked ? 'text' : 'password';
+        if(pw1) pw1.type = t;
+        if(pw2) pw2.type = t;
+      });
+      show._lv_bind = true;
+    }
+
+    if(gen && !gen._lv_bind){
+      gen.addEventListener('click', function(){
+        var s = Math.random().toString(36).slice(2, 10) + Math.random().toString(36).slice(2, 6);
+        if(pw1) pw1.value = s;
+        if(pw2) pw2.value = s;
+        if(pw1) pw1.focus();
+        lvToast('Passwort vorgeschlagen – bitte speichern.');
+      });
+      gen._lv_bind = true;
+    }
+
+    function onSave(e){
+      var a = (pw1 && pw1.value) || '';
+      var b = (pw2 && pw2.value) || '';
+      if(!isValidPw(a)){
+        e.preventDefault(); e.stopImmediatePropagation();
+        lvToast('Neues Passwort ist zu kurz (min. 4 Zeichen).');
+        if(pw1){ pw1.focus(); pw1.select && pw1.select(); }
+        return;
+      }
+      if(a !== b){
+        e.preventDefault(); e.stopImmediatePropagation();
+        lvToast('Passwörter stimmen nicht überein.');
+        if(pw2){ pw2.focus(); pw2.select && pw2.select(); }
+        return;
+      }
+    }
+
+    if(save && !save._lv_pw_guard){
+      save.addEventListener('click', onSave, true); // capture: vor bestehendem Handler
+      save._lv_pw_guard = true;
+    }
+  }
+
+  // --- Optional: "Benutzer-Passwort setzen" (im Mitgliederbereich), falls vorhanden ---
+  function bindMemberPw(){
+    var btns = document.querySelectorAll('[data-action="member-set-password"], #btnMemberSetPw');
+    if(!btns || !btns.length) return;
+    btns.forEach(function(btn){
+      if(btn._lv_pw_guard) return;
+      btn.addEventListener('click', function(e){
+        // Erwartetes Muster: es gibt zwei Inputs mit IDs/Names wie memberPwNew / memberPwRepeat – tolerant suchen.
+        var p1 = document.querySelector('#memberPwNew, [name="memberPwNew"]');
+        var p2 = document.querySelector('#memberPwRepeat, [name="memberPwRepeat"]');
+        var a = (p1 && p1.value) || '';
+        var b = (p2 && p2.value) || '';
+        if(!isValidPw(a)){
+          e.preventDefault(); e.stopImmediatePropagation();
+          lvToast('Benutzer-Passwort ist zu kurz (min. 4 Zeichen).');
+          if(p1){ p1.focus(); p1.select && p1.select(); }
+          return;
+        }
+        if(a !== b){
+          e.preventDefault(); e.stopImmediatePropagation();
+          lvToast('Benutzer-Passwörter stimmen nicht überein.');
+          if(p2){ p2.focus(); p2.select && p2.select(); }
+          return;
+        }
+      }, true);
+      btn._lv_pw_guard = true;
+    });
+  }
+
+  document.addEventListener('DOMContentLoaded', function(){
+    bindLogin();
+    bindAccountPw();
+    bindMemberPw();
+  });
+})();
+</script>
+
+
+<script id="lv-login-ux-v007">
+(function(){
+  'use strict';
+  function $(id){ return document.getElementById(id); }
+
+  function focusLoginFields(){
+    try{
+      var email = $('loginEmail');
+      var pass  = $('loginPass');
+      if(!email && !pass) return;
+      var u = (email && (email.value||'').trim()) || '';
+      if(email && !u){ email.focus(); return; }
+      if(pass){ pass.focus(); try{ pass.select && pass.select(); }catch(_){ } }
+    }catch(e){ try{console.error(e);}catch(_){ } }
+  }
+
+  function bindDialogEnter(){
+    var dlg = $('pwDlg');
+    if(!dlg || dlg._lv_enter_bound) return;
+
+    dlg.addEventListener('keydown', function(ev){
+      if(ev.key !== 'Enter') return;
+      var tag = (ev.target && ev.target.tagName || '').toLowerCase();
+      if(tag === 'textarea') return;
+      var btn = $('btnLoginGo');
+      if(btn){
+        ev.preventDefault();
+        btn.click();
+      }
+    });
+    dlg._lv_enter_bound = true;
+  }
+
+  function preventDoubleClick(){
+    var btn = $('btnLoginGo');
+    if(!btn || btn._lv_dbl_guard) return;
+    btn.addEventListener('click', function(ev){
+      if(btn.disabled){ ev.preventDefault(); ev.stopImmediatePropagation(); return; }
+      btn.disabled = true;
+      setTimeout(function(){ btn.disabled = false; }, 1200);
+    }, true); // capture, frühzeitig
+    btn._lv_dbl_guard = true;
+  }
+
+  // Observe dialog visibility to focus on open
+  function isVisible(el){
+    if(!el) return false;
+    var style = window.getComputedStyle(el);
+    var visible = (style.display !== 'none') && (style.visibility !== 'hidden') && el.offsetParent !== null;
+    if(el.classList && el.classList.contains('lv-visible')) visible = true;
+    return visible;
+  }
+
+  function observeLoginOpen(){
+    var dlg = $('pwDlg');
+    if(!dlg) return;
+    if(!dlg._lv_obs){
+      var mo = new MutationObserver(function(){
+        if(isVisible(dlg)) setTimeout(focusLoginFields, 0);
+      });
+      mo.observe(dlg, { attributes:true, attributeFilter:['class','style'] });
+      dlg._lv_obs = mo;
+    }
+    // initial
+    if(isVisible(dlg)) setTimeout(focusLoginFields, 0);
+  }
+
+  document.addEventListener('DOMContentLoaded', function(){
+    bindDialogEnter();
+    preventDoubleClick();
+    observeLoginOpen();
+    // Falls der Dialog programmgesteuert nachträglich in den DOM gehängt wird:
+    setTimeout(function(){ bindDialogEnter(); preventDoubleClick(); observeLoginOpen(); }, 300);
+  });
+})();
+</script>
+
+
+<script id="lv-outbox-gate-v008">
+(function(){
+  'use strict';
+  function $(id){ return document.getElementById(id); }
+  function toastSafe(msg){
+    try{ if (typeof toast==='function') toast(msg); else alert(String(msg)); }catch(_){ alert(String(msg)); }
+  }
+  function canSync(){
+    try{
+      if (typeof canSyncBasicOrAdvanced==='function') return !!canSyncBasicOrAdvanced();
+      if (typeof isAdmin==='function' && isAdmin()) return true;
+      if (typeof has==='function' && (has('sync_basic') || has('sync_advanced'))) return true;
+      var v = String(localStorage.getItem('lv_admin')||'').toLowerCase();
+      return (v==='1'||v==='true'||v==='yes');
+    }catch(_){ return false; }
+  }
+  function outboxCount(){
+    try{ var raw = localStorage.getItem(outboxKey)||'[]'; var arr = JSON.parse(raw); return Array.isArray(arr)?arr.length:0; }catch(_){ return 0; }
+  }
+  function applyOutboxUI(){
+    try{
+      var retry = $('btnRetryOutbox');
+      var sendNow = $('queueSendNow');
+      var count = outboxCount();
+      var can = canSync();
+      // Retry-Button bleibt an Outbox + Rechten gekoppelt
+      if (retry){ retry.style.display = (count>0 && can) ? '' : 'none'; }
+      // Button "Jetzt senden" bleibt sauber an Berechtigung gekoppelt
+      if (sendNow){ sendNow.disabled = !can; }
+      // Sichtbarkeit & Text des Warteschlangen-Banners werden ausschließlich
+      // von updateQueueStatus() gesteuert, um Flackern zu vermeiden.
+    }catch(_){}
+  }
+  function applyManualSyncUI(){
+    try{
+      var btn = $('btnManualPush');
+      if(!btn) return;
+      // Falls die bestehende Logik bereits entscheidet, nicht überschreiben – nur absichern
+      var cfg = (typeof readBrConfig === 'function') ? readBrConfig() : {};
+      var auto = !!(cfg && cfg.autoSync);
+      if (auto || !canSync()){ btn.setAttribute('aria-disabled','true'); }
+      else { btn.removeAttribute('aria-disabled'); }
+    }catch(_){}
+  }
+
+  // Click guards (capture) – verhindern Ausführung auch bei fremden Bindings
+  document.addEventListener('click', function(ev){
+    var t = ev.target;
+    if(!t) return;
+    var el = t.closest ? t.closest('#btnRetryOutbox, #queueSendNow, #btnManualPush') : null;
+    if(!el) return;
+    if (el.id === 'btnManualPush'){
+      if (!canSync()){
+        ev.preventDefault(); ev.stopImmediatePropagation();
+        toastSafe('Keine Berechtigung für Synchronisation.');
+      }
+      return;
+    }
+    // For outbox actions
+    if (el.id === 'btnRetryOutbox' || el.id === 'queueSendNow'){
+      if (!canSync()){
+        ev.preventDefault(); ev.stopImmediatePropagation();
+        toastSafe('Keine Berechtigung für Synchronisation.');
+        return;
+      }
+      if (outboxCount()<=0){
+        ev.preventDefault(); ev.stopImmediatePropagation();
+        toastSafe('Keine Einträge in der Warteschlange.');
+        return;
+      }
+    }
+  }, true);
+
+  // Initial & reactive apply
+  document.addEventListener('DOMContentLoaded', function(){
+    applyOutboxUI();
+    applyManualSyncUI();
+  });
+  window.addEventListener('storage', function(e){
+    if (e && e.key===outboxKey){ applyOutboxUI(); }
+    if (e && (e.key==='lv_admin' || e.key==='lv_session')){ applyOutboxUI(); applyManualSyncUI(); }
+  });
+  // Fallback: periodisch leichtgewichtig prüfen (sehr selten)
+  setInterval(function(){ applyOutboxUI(); }, 3000);
+})();
+</script>
+
+
+<script id="lv-outbox-banner-v009">
+(function(){
+  'use strict';
+  function $(id){ return document.getElementById(id); }
+  function canSync(){
+    try{
+      if (typeof canSyncBasicOrAdvanced==='function') return !!canSyncBasicOrAdvanced();
+      if (typeof isAdmin==='function' && isAdmin()) return true;
+      if (typeof has==='function' && (has('sync_basic') || has('sync_advanced'))) return true;
+      var v = String(localStorage.getItem('lv_admin')||'').toLowerCase();
+      return (v==='1'||v==='true'||v==='yes');
+    }catch(_){ return false; }
+  }
+  function outboxCount(){
+    try{ var raw = localStorage.getItem(outboxKey)||'[]'; var arr = JSON.parse(raw); return Array.isArray(arr)?arr.length:0; }catch(_){ return 0; }
+  }
+  function ensureBadges(){
+    var banner = $('queueBanner');
+    if(!banner) return null;
+    // Create a small inline badge row if not present
+    var row = banner.querySelector('.lv-badge-row');
+    if(!row){
+      row = document.createElement('div');
+      row.className = 'lv-badge-row';
+      row.style.display = 'flex';
+      row.style.gap = '8px';
+      row.style.alignItems = 'center';
+      row.style.marginTop = '6px';
+      banner.appendChild(row);
+    }
+    var bCount = $('queueBadgeCount');
+    if(!bCount){
+      bCount = document.createElement('span');
+      bCount.id = 'queueBadgeCount';
+      bCount.className = 'badge';
+      bCount.style.display = 'inline-block';
+      bCount.style.padding = '2px 6px';
+      bCount.style.borderRadius = '999px';
+      bCount.style.fontSize = '11px';
+      bCount.style.lineHeight = '14px';
+      bCount.style.border = '1px solid currentColor';
+      row.appendChild(bCount);
+    }
+    var bPerm = $('queueBadgePerm');
+    if(!bPerm){
+      bPerm = document.createElement('span');
+      bPerm.id = 'queueBadgePerm';
+      bPerm.className = 'badge';
+      bPerm.style.display = 'inline-block';
+      bPerm.style.padding = '2px 6px';
+      bPerm.style.borderRadius = '999px';
+      bPerm.style.fontSize = '11px';
+      bPerm.style.lineHeight = '14px';
+      bPerm.style.border = '1px solid currentColor';
+      row.appendChild(bPerm);
+    }
+    return { row: row, bCount: bCount, bPerm: bPerm };
+  }
+  function applyBadges(){
+    var parts = ensureBadges();
+    if(!parts) return;
+    var count = outboxCount();
+    var can = canSync();
+    parts.bCount.textContent = (count>0 ? (count+' in Warteschlange') : 'leer');
+    parts.bCount.setAttribute('aria-label', 'Outbox: ' + parts.bCount.textContent);
+    parts.bPerm.textContent = can ? 'berechtigt' : 'kein Recht';
+    parts.bPerm.setAttribute('aria-label', 'Sync-Recht: ' + parts.bPerm.textContent);
+  }
+  function applyTitle(){
+    var banner = $('queueBanner');
+    if(!banner) return;
+    var count = outboxCount();
+    var can = canSync();
+    var title = (count>0 ? (count+' wartende Einträge. ') : 'Keine wartenden Einträge. ')
+              + (can ? 'Berechtigung vorhanden.' : 'Keine Berechtigung.');
+    banner.setAttribute('title', title);
+  }
+  function applyAll(){ applyBadges(); applyTitle(); }
+  document.addEventListener('DOMContentLoaded', applyAll);
+  window.addEventListener('storage', function(e){
+    if(!e) return;
+    if(e.key===outboxKey || e.key==='lv_admin' || e.key==='lv_session'){ applyAll(); }
+  });
+  setInterval(applyAll, 3000);
+})();
+</script>
+
+
+<script id="lv-cat-normalize-v010">
+(function(){
+  'use strict';
+  // safe helpers
+  function $(sel){ return document.querySelector(sel) }
+  function $all(sel){ return Array.prototype.slice.call(document.querySelectorAll(sel) || []); }
+  function norm(v){
+    try{
+      if (typeof normalizeCategory === 'function') return normalizeCategory(v);
+    }catch(_){}
+    return (v==null?'':String(v));
+  }
+  function catShort(uiName){
+    try{
+      if (typeof CAT_SHORT === 'object' && CAT_SHORT && CAT_SHORT[uiName]) return CAT_SHORT[uiName];
+    }catch(_){}
+    return '';
+  }
+
+  // 1) Rendering: patch category chip/label after list renders
+  function patchRenderedCategoryChips(){
+    try{
+      // Heuristik: Elemente mit data-cat oder [data-field="category"]
+      var nodes = $all('[data-cat], [data-field="category"]');
+      nodes.forEach(function(el){
+        var raw = el.getAttribute('data-cat') || el.textContent || '';
+        var ui = norm(raw);
+        // Textinhalt angleichen
+        if (ui && el.childElementCount===0 && (el.hasAttribute('data-cat') || el.getAttribute('data-field')==='category')){ if (ui !== (el.textContent||'')) el.textContent = ui; }
+        // data-short für Badge
+        var sc = catShort(ui);
+        if (sc){ el.setAttribute('data-short', sc); }
+      });
+    }catch(_){}
+  }
+
+  // 2) Filter: normalize both sides before compare
+  // Hook: wenn es ein Kategoriefilter-Select gibt (#catFilter / #filterCategory), patchen wir dessen Change-Handler leicht.
+  function patchCategoryFilter(){
+    var sel = $('#catFilter') || $('#filterCategory');
+    if (!sel) return;
+    if (sel._lv_norm_bound) return;
+    sel.addEventListener('change', function(){
+      try{ patchRenderedCategoryChips(); }catch(_){}
+    });
+    sel._lv_norm_bound = true;
+  }
+
+  // 3) Monkey-patch: wrap a common compare util if vorhanden
+  // nrm(): häufige Utility; wir ergänzen nrmCat(v) = nrm(normalizeCategory(v))
+  if (!window.nrmCat){
+    window.nrmCat = function(v){
+      try{
+        var s = (typeof normalizeCategory === 'function') ? normalizeCategory(v) : (v||'');
+        if (typeof nrm === 'function') return nrm(s);
+        return String(s||'').trim().toLowerCase();
+      }catch(_){
+        try{ return String(v||'').trim().toLowerCase(); }catch(_){ return '' }
+      }
+    };
+  }
+
+  // 4) Patch: wenn es eine Funktion buildFilter/renderOverview gibt, wickeln wir deren Vergleich vorsichtig
+  // Wir hängen keine Logik um, sondern stellen nur nrmCat(...) bereit und lassen bestehende Vergleiche davon profitieren.
+  // (Viele Stellen rufen bereits nrm(...) auf – durch nrmCat erhalten sie Normalisierung gratis, wenn sie es nutzen.)
+  // Leichtes After-render-Hook für die üblichen Render-Einstiegspunkte:
+  function hookAfterRender(){
+    try{
+      patchRenderedCategoryChips();
+    }catch(_){}
+  }
+  // global leichte Hooks, ohne bestehende Implementierungen anzutasten
+  document.addEventListener('DOMContentLoaded', function(){
+    try{ patchCategoryFilter(); hookAfterRender(); }catch(_){}
+  });
+  window.addEventListener('storage', function(e){
+    if (e && e.key && e.key.indexOf('items')>=0){
+      try{ hookAfterRender(); }catch(_){}
+    }
+  });
+  // periodisch sanft aktualisieren (kollisionsarm)
+  setInterval(patchRenderedCategoryChips, 2500);
+})();
+</script>
+
+
+<script id="lv-cat-save-v011">
+(function(){
+  'use strict';
+  function $(id){ return document.getElementById(id); }
+  function getCatInput(){
+    var el = document.getElementById('category');
+    if (el) return el;
+    try{ el = document.querySelector('[name="category"]'); }catch(_){}
+    return el || null;
+  }
+  function enabled(){
+    try{
+      var v = String(localStorage.getItem('lv_cat_save_normalize')||'1').toLowerCase();
+      return !(v==='0' || v==='false' || v==='no');
+    }catch(_){ return true; }
+  }
+  function onSaveCapture(ev){
+    if (!enabled()) return;
+    try{
+      var cat = getCatInput();
+      if (!cat) return;
+      var val = (cat.value==null?'':String(cat.value));
+      if (typeof normalizeCategory === 'function'){
+        var ui = normalizeCategory(val);
+        if (ui && ui !== val){ cat.value = ui; }
+      }
+    }catch(_){ /* no-op */ }
+  }
+  document.addEventListener('DOMContentLoaded', function(){
+    var btn = $('btnSave');
+    if (btn && !btn._lv_cat_bind){
+      btn.addEventListener('click', onSaveCapture, true);
+      btn._lv_cat_bind = true;
+    }
+  });
+})();
+</script>
+
+
+<script id="lv-v015-selftest-status">
+(function(){
+  'use strict';
+  function $(id){ return document.getElementById(id); }
+
+  // --- Cloud-Status: einheitliche Anzeige ---
+  window.setCloudStatus = window.setCloudStatus || function(state){
+    try{
+      var pill = $('statusCloud');
+      var hint = $('cloudStatus');
+      var txt = 'Cloud: ' + (state==='online' ? 'online' : (state==='fehler' ? 'Fehler' : 'offline'));
+      if(pill) pill.textContent = txt;
+      if(hint) hint.textContent = 'Status: ' + (state==='online' ? 'online' : (state==='fehler' ? 'Fehler' : 'offline'));
+    }catch(_){}
+  };
+
+  // --- Kopplung Outbox-Zähler ↔ Status-Pill ---
+  function outboxCount(){
+    try{
+      var raw = localStorage.getItem(outboxKey) || '[]';
+      var arr = JSON.parse(raw);
+      return Array.isArray(arr) ? arr.length : 0;
+    }catch(_){ return 0; }
+  }
+  function applyStatusQueue(){
+    // Ab V70 steuert updateQueueStatus() die Anzeige und den Text
+    // für die Status-Pill „Sync ausstehend“, inklusive Pending-ops
+    // und Outbox-Bestand. Diese Funktion delegiert nur noch dorthin,
+    // um widersprüchliche Updates und Flackern zu vermeiden.
+    try{
+      if (typeof updateQueueStatus === 'function'){
+        updateQueueStatus();
+        return;
+      }
+    }catch(_){}
+    // Fallback: alte Logik (nur Outbox) – wird normalerweise nicht mehr benötigt
+    var pill = $('statusQueue');
+    if(!pill) return;
+    var n = outboxCount();
+    if(n>0){
+      pill.style.display='inline-block';
+      pill.textContent = 'Sync ausstehend: ' + n;
+    }else{
+      pill.style.display='none';
+    }
+  }
+  document.addEventListener('DOMContentLoaded', applyStatusQueue);
+  window.addEventListener('storage', function(e){
+    if(e && e.key===outboxKey){ applyStatusQueue(); }
+  });
+  setInterval(applyStatusQueue, 2500);
+
+  // --- Selftest: Ergebnis auf Cloud-Status mappen (best-effort, nicht invasiv) ---
+  // Wir dekorieren cloudSelftest minimal, ohne es neu zu schreiben.
+  if (typeof window.cloudSelftest === 'function' && !window._lv_v015_wrap) {
+    var orig = window.cloudSelftest;
+    window.cloudSelftest = function(){
+      try{
+        var resEl = $('cloudSelftestResult');
+        if(resEl) resEl.setAttribute('data-start', Date.now());
+      }catch(_){}
+      var p = orig.apply(this, arguments);
+      // p kann Promise sein – wir versuchen, nach DOM-Update den Status zu lesen
+      setTimeout(function(){
+        try{
+          var box = $('cloudSelftestResult');
+          if(!box){ return; }
+          var html = box.innerHTML || '';
+          if (html.indexOf('lv-dot-err') < 0 && html.trim().length){ setCloudStatus('online'); }
+        }catch(_){}
+      }, 400);
+      return p;
+    };
+    window._lv_v015_wrap = true;
+  }
+})();
+</script>
+
+
+<script id="lv-v018-history-usernames">
+(function(){
+  'use strict';
+  function $(q){ return document.querySelector(q); }
+  function $all(q){ return Array.prototype.slice.call(document.querySelectorAll(q)||[]); }
+  function isLocalAdmin(){
+    try{
+      var v = String(localStorage.getItem('lv_admin')||'').toLowerCase();
+      return (v==='1'||v==='true'||v==='yes');
+    }catch(_){ return false; }
+  }
+  function has(p){
+    try{ return (typeof window.has==='function') ? window.has(p) : false; }catch(_){ return false; }
+  }
+  function isAdminSafe(){
+    try{ return (typeof window.isAdmin==='function') ? window.isAdmin() : false; }catch(_){ return false; }
+  }
+  function canSeeHistoryUsernames(){
+    // explicit perm first
+    try{ if (has('view_history_usernames')) return true; }catch(_){}
+    // admin helpers
+    if (isAdminSafe()) return true;
+    if (isLocalAdmin()) return true;
+    // currentPerms fallback (if exposed globally)
+    try{
+      var cp = window.currentPerms || window.perms || {};
+      if (cp && (cp.admin === true || cp.is_admin === true || String(cp.role||'').toLowerCase()==='admin')) return true;
+    }catch(_){}
+    return false;
+  }
+  window.canSeeHistoryUsernames = canSeeHistoryUsernames;
+
+  // Hide/Show Benutzer column in the global History dialog
+  function applyHistoryUserColumn(){
+    var tbody = $('#historyTable tbody');
+    var thead = $('#historyTable thead');
+    if(!tbody || !thead) return;
+    var show = canSeeHistoryUsernames();
+    // Benutzer column index is 1 (0=Zeitpunkt,1=Benutzer,...)
+    var idx = 1;
+    // header
+    var ths = thead.querySelectorAll('th');
+    if (ths && ths[idx]) ths[idx].style.display = show ? '' : 'none';
+    // rows
+    $all('#historyTable tbody tr').forEach(function(tr){
+      var cell = tr.cells && tr.cells[idx];
+      if (cell){ cell.style.display = show ? '' : 'none'; }
+    });
+  }
+
+  // Forward helper (not wired): attach current user to a history entry object
+  window.stampHistoryUser = function(entry){
+    try{
+      var e = entry || {};
+      var sess = {};
+      try{ sess = JSON.parse(localStorage.getItem('lv_session')||'{}'); }catch(_){}
+      var name = sess && (sess.userName || sess.username || sess.user || sess.email || sess.name) || '';
+      var uid  = sess && (sess.userId || sess.user_id || sess.memberId || sess.member_id || '') || '';
+      if (name) e.user = String(name);
+      if (uid)  e.user_id = String(uid);
+      return e;
+    }catch(_){ return entry; }
+  };
+
+  document.addEventListener('DOMContentLoaded', applyHistoryUserColumn);
+  // Re-apply when history might be (re)rendered
+  ['click','input','change','toggle'].forEach(function(ev){
+    document.addEventListener(ev, function(e){
+      if ((e.target && (e.target.id==='openHistory' || e.target.id==='btnHistoryOk' || e.target.id==='btnHistoryExport')) ||
+          (e.target && (e.target.id==='histSearch' || e.target.id==='histType' || e.target.id==='histFrom' || e.target.id==='histTo'))){
+        setTimeout(applyHistoryUserColumn, 50);
+      }
+    }, true);
+  });
+  window.addEventListener('storage', function(e){
+    if(e && e.key==='lv_session'){ setTimeout(applyHistoryUserColumn, 50); }
+  });
+  // periodic light safeguard
+  setInterval(applyHistoryUserColumn, 2000);
+})();
+</script>
+
+
+<script id="lv-v020-stamp-helper">
+(function(){
+  'use strict';
+  if (!window.stampHistoryUser) {
+    window.stampHistoryUser = function(entry){
+      try{
+        var e = entry || {};
+        var sess = {};
+        try{ sess = JSON.parse(localStorage.getItem('lv_session')||'{}'); }catch(_){}
+        var name = sess && (sess.userName || sess.username || sess.user || sess.email || sess.name) || '';
+        var uid  = sess && (sess.userId || sess.user_id || sess.memberId || sess.member_id || '') || '';
+        if (name) e.user = String(name);
+        if (uid)  e.user_id = String(uid);
+        try{
+          var m = e.meta && typeof e.meta==='object' ? e.meta : {};
+          if (name && !m.user) m.user = e.user;
+          if (uid && !m.user_id) m.user_id = e.user_id;
+          e.meta = m;
+        }catch(_){}
+        return e;
+      }catch(_){ return entry; }
+    };
+  }
+})();
+</script>
+
+
+<script>
+// v021 – DOM-basierte Textsuche im globalen History-Dialog (vorsichtig, Anzeige-only)
+(function(){
+  try{
+    function applyHistTextFilter(){
+      var dlg = document.getElementById('historyDlg');
+      var table = document.getElementById('historyTable');
+      var input = document.getElementById('histSearch');
+      var countEl = document.getElementById('histCount');
+      if (!dlg || !table || !input) return;
+      var q = (input.value || '').toString().trim().toLowerCase();
+      var rows = table.tBodies && table.tBodies[0] ? table.tBodies[0].rows : null;
+      if (!rows) return;
+      var visible = 0;
+      for (var i=0;i<rows.length;i++){
+        var row = rows[i];
+        var txt = (row.textContent || row.innerText || '').toLowerCase();
+        var show = !q || txt.indexOf(q) >= 0;
+        row.style.display = show ? '' : 'none';
+        if (show) visible++;
+      }
+      if (countEl){
+        try{
+          countEl.textContent = visible + ' Einträge';
+        }catch(_){}
+      }
+    }
+
+    function wireHistSearch(){
+      var input = document.getElementById('histSearch');
+      if (!input || input.__lvHistWired) return;
+      input.__lvHistWired = true;
+      input.addEventListener('input', function(){
+        try{ applyHistTextFilter(); }catch(_){}
+      });
+    }
+
+    // beim Öffnen der Historie Suchfeld leeren + Filter neu anwenden
+    if (typeof window.openHistory === 'function' && !window.openHistory.__lvHistWrap){
+      var _origOpenHistory = window.openHistory;
+      window.openHistory = function(){
+        var rv = _origOpenHistory.apply(this, arguments);
+        try{
+          wireHistSearch();
+          var input = document.getElementById('histSearch');
+          if (input){
+            input.value = '';
+            applyHistTextFilter();
+          }
+        }catch(_){}
+        return rv;
+      };
+      window.openHistory.__lvHistWrap = true;
+    }
+
+    // Fallback: nach DOM-Ready verdrahten, falls Dialog bereits offen
+    if (document.readyState === 'loading'){
+      document.addEventListener('DOMContentLoaded', function(){
+        try{ wireHistSearch(); }catch(_){}
+      });
+    } else {
+      wireHistSearch();
+    }
+
+    // optional: bei erneutem Anzeigen nach pageshow verdrahten
+    window.addEventListener('pageshow', function(){
+      try{ wireHistSearch(); }catch(_){}
+    });
+  }catch(_){}
+})();
+</script>
+
+
+<script>
+(function(){
+  'use strict';
+
+  // Lokaler Storage-Key + App-Settings-Key
+  var START_NOTICE_KEY      = 'lv_start_notice';
+  var START_NOTICE_APP_KEY  = 'start_notice';
+
+  function readStartNotice(){
+    var cfg = {
+      enabled: false,
+      text: '',
+      onLogin: true,
+      onSync: false,
+      targetGroupId: 'ALL'
+    };
+    var hasFlags = false;
+
+    // 1) Lokale Konfiguration lesen
+    try {
+      var local = null;
+      if (typeof loadJson === 'function') {
+        local = loadJson(START_NOTICE_KEY, null);
+      } else if (typeof localStorage !== 'undefined') {
+        var raw = localStorage.getItem(START_NOTICE_KEY);
+        local = raw ? JSON.parse(raw) : null;
+      }
+      if (local && typeof local === 'object') {
+        if (typeof local.enabled === 'boolean') cfg.enabled = local.enabled;
+        if (typeof local.text === 'string')    cfg.text    = local.text;
+        if ('onLogin' in local || 'onSync' in local) {
+          hasFlags = true;
+          if (typeof local.onLogin === 'boolean') cfg.onLogin = local.onLogin;
+          if (typeof local.onSync === 'boolean')  cfg.onSync  = local.onSync;
+        }
+        if (typeof local.targetGroupId === 'string' && local.targetGroupId) {
+          cfg.targetGroupId = local.targetGroupId;
+        }
+      }
+    } catch(_){}
+
+    // 2) Cloud/AppSettings-Overlay (falls vorhanden)
+    try {
+      var api   = (typeof window !== 'undefined') ? window.lvAppSettings : null;
+      var cache = api && typeof api.readCache === 'function' ? api.readCache() : null;
+      var cloud = cache && cache[START_NOTICE_APP_KEY];
+      if (cloud && typeof cloud === 'object') {
+        if (typeof cloud.enabled === 'boolean') cfg.enabled = cloud.enabled;
+        if (typeof cloud.text === 'string')    cfg.text    = cloud.text;
+        if ('onLogin' in cloud || 'onSync' in cloud) {
+          hasFlags = true;
+          if (typeof cloud.onLogin === 'boolean') cfg.onLogin = cloud.onLogin;
+          if (typeof cloud.onSync === 'boolean')  cfg.onSync  = cloud.onSync;
+        }
+        if (typeof cloud.targetGroupId === 'string' && cloud.targetGroupId) {
+          cfg.targetGroupId = cloud.targetGroupId;
+        }
+      }
+    } catch(_){}
+
+    // Fallback für alte Konfiguration ohne Flags
+    if (!hasFlags) {
+      cfg.onLogin = !!cfg.enabled;
+      cfg.onSync  = false;
+    }
+    cfg.enabled = !!(cfg.onLogin || cfg.onSync);
+    if (!cfg.targetGroupId) cfg.targetGroupId = 'ALL';
+
+    return cfg;
+  }
+
+  function writeStartNotice(cfg){
+    cfg = cfg || {};
+    var targetGroupId = (typeof cfg.targetGroupId === 'string' && cfg.targetGroupId)
+      ? cfg.targetGroupId
+      : 'ALL';
+
+    var out = {
+      enabled: !!(cfg.enabled || cfg.onLogin || cfg.onSync),
+      text: (cfg.text || '').toString(),
+      onLogin: (typeof cfg.onLogin === 'boolean') ? cfg.onLogin : true,
+      onSync: !!cfg.onSync,
+      targetGroupId: targetGroupId
+    };
+
+    // Lokal speichern
+    try {
+      if (typeof saveJson === 'function') {
+        saveJson(START_NOTICE_KEY, out);
+      } else if (typeof localStorage !== 'undefined') {
+        localStorage.setItem(START_NOTICE_KEY, JSON.stringify(out));
+      }
+    } catch(_){}
+
+    // In AppSettings (Cloud) spiegeln
+    try {
+      var api = (typeof window !== 'undefined') ? window.lvAppSettings : null;
+      if (api && typeof api.upsert === 'function') {
+        api.upsert(START_NOTICE_APP_KEY, out);
+      }
+    } catch(_){}
+  }
+
+  function populateStartNoticeGroupSelect(cfg){
+    try{
+      var sel = document.getElementById('startNoticeTargetGroup');
+      if (!sel) return;
+
+      var groupsList = Array.isArray(window.groups) ? window.groups : [];
+      var current = (cfg && cfg.targetGroupId) ? String(cfg.targetGroupId) : 'ALL';
+
+      while (sel.firstChild) sel.removeChild(sel.firstChild);
+
+      var optAll = document.createElement('option');
+      optAll.value = 'ALL';
+      optAll.textContent = 'Alle Gruppen';
+      sel.appendChild(optAll);
+
+      for (var i = 0; i < groupsList.length; i++) {
+        var g = groupsList[i];
+        if (!g) continue;
+        var o = document.createElement('option');
+        o.value = String(g.id || '');
+        o.textContent = g.name || g.id || '';
+        sel.appendChild(o);
+      }
+
+      if (!current) current = 'ALL';
+      var found = false;
+      for (var j = 0; j < sel.options.length; j++) {
+        if (sel.options[j].value === current) { found = true; break; }
+      }
+      sel.value = found ? current : 'ALL';
+    }catch(_){}
+  }
+
+  function initStartNoticeUI(){
+    try{
+      var sec = document.getElementById('secStartNotice');
+      if (sec){
+        var can = false;
+        try{
+          if (typeof has === 'function'){
+            can = !!(has('manage_start_notice') || has('manage_settings'));
+          }else if (window.currentPerms){
+            var p = window.currentPerms;
+            can = !!(p.manage_start_notice || p.manage_settings);
+          }
+        }catch(_){}
+        sec.style.display = can ? 'block' : 'none';
+      }
+
+      var cfg = readStartNotice();
+      var boxLogin = document.getElementById('startNoticeOnLogin');
+      var boxSync  = document.getElementById('startNoticeOnSync');
+      var txt      = document.getElementById('startNoticeText');
+      var legacyBox = document.getElementById('startNoticeEnabled');
+
+      populateStartNoticeGroupSelect(cfg);
+
+      if (boxLogin || boxSync){
+        if (boxLogin) boxLogin.checked = !!cfg.onLogin;
+        if (boxSync)  boxSync.checked  = !!cfg.onSync;
+      }else if (legacyBox){
+        legacyBox.checked = !!cfg.enabled;
+      }
+      if (txt) txt.value = cfg.text || '';
+    }catch(_){}
+  }
+
+  function saveStartNoticeFromUI(){
+    try{
+      var boxLogin = document.getElementById('startNoticeOnLogin');
+      var boxSync  = document.getElementById('startNoticeOnSync');
+      var txt      = document.getElementById('startNoticeText');
+      var legacyBox = document.getElementById('startNoticeEnabled');
+      var selGroup = document.getElementById('startNoticeTargetGroup');
+      if (!boxLogin && !boxSync && !legacyBox && !txt && !selGroup) return;
+
+      var cfg = readStartNotice();
+      if (boxLogin || boxSync){
+        if (boxLogin) cfg.onLogin = !!boxLogin.checked;
+        if (boxSync)  cfg.onSync  = !!boxSync.checked;
+        cfg.enabled = !!(cfg.onLogin || cfg.onSync);
+      }else if (legacyBox){
+        cfg.enabled = !!legacyBox.checked;
+        cfg.onLogin = !!cfg.enabled;
+        cfg.onSync  = false;
+      }
+      if (txt) cfg.text = String(txt.value || '');
+
+      if (selGroup){
+        var val = selGroup.value || 'ALL';
+        if (!val) val = 'ALL';
+        cfg.targetGroupId = val;
+      }
+
+      writeStartNotice(cfg);
+    }catch(_){}
+  }
+
+  function maybeShowStartNotice(context){
+    try{
+      var cfg = readStartNotice();
+      if (!cfg.enabled) return;
+      var mode = String(context || 'login');
+      if (mode === 'login' && !cfg.onLogin) return;
+      if (mode === 'sync'  && !cfg.onSync)  return;
+
+      // Zielgruppe prüfen
+      var target = cfg.targetGroupId || 'ALL';
+      if (target && target !== 'ALL'){
+        var gid = null;
+        try { gid = window.currentGroupId || null; } catch(_){}
+
+        if (!gid){
+          try{
+            var emailNorm = String(window.currentUserEmail || '').toLowerCase();
+            var mems = Array.isArray(window.members) ? window.members : [];
+            for (var i = 0; i < mems.length; i++){
+              var m = mems[i];
+              if (String(m.username || '').toLowerCase() === emailNorm){
+                gid = m.group_id || null;
+                break;
+              }
+            }
+          }catch(_){}
+        }
+
+        if (!gid || String(gid) !== String(target)) return;
+      }
+
+      var txt = (cfg.text || '').trim();
+      if (!txt) return;
+
+      var dlg  = document.getElementById('startNoticeDlg');
+      var body = document.getElementById('startNoticeBody');
+      if (!dlg){
+        alert(txt);
+        return;
+      }
+      if (body) body.textContent = txt;
+      try{ dlg.showModal(); }catch(_){ dlg.open = true; }
+    }catch(_){}
+  }
+
+  window.readStartNotice        = readStartNotice;
+  window.writeStartNotice       = writeStartNotice;
+  window.initStartNoticeUI      = initStartNoticeUI;
+  window.saveStartNoticeFromUI  = saveStartNoticeFromUI;
+  window.maybeShowStartNotice   = maybeShowStartNotice;
+
+  if (document.readyState === 'loading'){
+    document.addEventListener('DOMContentLoaded', initStartNoticeUI);
+  }else{
+    initStartNoticeUI();
+  }
+
+  document.addEventListener('DOMContentLoaded', function(){
+    try{
+      var btnOk = document.getElementById('btnSettingsOk');
+      if (btnOk && !btnOk.__startNoticeSave){
+        btnOk.addEventListener('click', function(){
+          saveStartNoticeFromUI();
+        }, true);
+        btnOk.__startNoticeSave = true;
+      }
+    }catch(_){}
+  });
+
+  document.addEventListener('DOMContentLoaded', function(){
+    try{
+      if (typeof window.setSession === 'function' && !window.setSession.__startNoticeWrap){
+        var orig = window.setSession;
+        window.setSession = function(email, persist){
+          var res = orig.apply(this, arguments);
+          try{
+            var api = (typeof window !== 'undefined') ? window.lvAppSettings : null;
+            if (api && typeof api.pullKeys === 'function'){
+              api.pullKeys([START_NOTICE_APP_KEY])
+                .then(function(){ try{ maybeShowStartNotice('login'); }catch(_){ } })
+                .catch(function(){ try{ maybeShowStartNotice('login'); }catch(_){ } });
+            }else{
+              maybeShowStartNotice('login');
+            }
+          }catch(_){}
+          return res;
+        };
+        window.setSession.__startNoticeWrap = true;
+
+        // Nach dem ersten Seitenstart einmalig prüfen, ob bereits eine Sitzung aktiv ist
+        // (z.B. durch „angemeldet bleiben“) und dann ggf. den Hinweis anzeigen.
+        try{
+          var api2 = (typeof window !== 'undefined') ? window.lvAppSettings : null;
+          if (api2 && typeof api2.pullKeys === 'function'){
+            api2.pullKeys([START_NOTICE_APP_KEY])
+              .then(function(){ try{ maybeShowStartNotice('login'); }catch(_){ } })
+              .catch(function(){ try{ maybeShowStartNotice('login'); }catch(_){ } });
+          }else{
+            setTimeout(function(){
+              try{ maybeShowStartNotice('login'); }catch(_){}
+            }, 500);
+          }
+        }catch(_){}
+      }else{
+        setTimeout(function(){
+          try{ maybeShowStartNotice('login'); }catch(_){}
+        }, 2000);
+      }
+    }catch(_){}
+  });
+
+})();
+</script>
+
+
+
+
+<!-- v101 – Respect AutoSync flag: only push automatically if AutoSync is enabled -->
+<script>
+(function(){
+  try{
+    if (typeof window.queueTask === 'function' && !window.queueTask.__lvAutoSyncGuard){
+      var __orig_qt__ = window.queueTask;
+      window.queueTask = function(name){
+        try{
+          if (name === 'pushAll'){
+            var auto = false;
+            try{
+              // Prefer config flag if available
+              var cfg = (typeof readBrConfig === 'function') ? readBrConfig() : null;
+              if (cfg && typeof cfg.autoSync !== 'undefined') auto = !!cfg.autoSync;
+            }catch(_){}
+            try{
+              // Fallback: read raw localStorage key
+              if (!auto && typeof localStorage !== 'undefined'){
+                var k = (typeof autoSyncKey !== 'undefined') ? autoSyncKey : 'lagerverwaltung_supabase_autosync';
+                auto = (localStorage.getItem(k) === '1' || localStorage.getItem(k) === 'true');
+              }
+            }catch(_){}
+            if (auto){
+              try{ if (typeof processOutbox === 'function') { processOutbox(); } }catch(e){ console.warn(e); }
+            }else{
+              // AutoSync aus -> NICHT senden, nur Rückgabe (Queue bleibt bestehen)
+              // Optional: UI aktualisieren
+              try{ if (typeof render === 'function') render(); }catch(_){}
+            }
+            return;
+          }
+        }catch(e){ console.warn('queueTask autosync guard error', e); }
+        try{ return __orig_qt__.apply(this, arguments); }catch(_){}
+      };
+      window.queueTask.__lvAutoSyncGuard = true;
+    }
+  }catch(_){}
+})();
+</script>
+</body>
+</html>
