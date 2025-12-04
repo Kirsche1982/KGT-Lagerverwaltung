@@ -1,13 +1,5 @@
 <!--
 Changelog
-2025-12-04 – v034 – Historie-Observer stabilisiert
-- lv48-history-final: headerIdx/patchTable robust gegen fehlende Tabelle.
-- MutationObserver schließt korrekt über der jeweiligen History-Tabelle (kein undefined mehr).
-- Keine Änderungen an History-Daten oder -Anzeige, nur Schutz vor JS-Fehlern.
--->
-
-<!--
-Changelog
 2025-11-30 – v033 – Lokaler Speicher-Reset mit Reload-Hinweis
 - Nach dem Löschen der lokalen Lagerdaten wird eine Nachfrage angezeigt, ob die Seite direkt neu geladen werden soll.
 -->
@@ -6839,7 +6831,6 @@ var tbody=document.querySelector('#alertsTable tbody'); if(!tbody) return; tbody
   }
   function headerIdx(tb){
     var idx={aktion:-1,artikel:-1,info:-1};
-    if (!tb || !tb.querySelectorAll) return idx;
     var ths = tb.querySelectorAll('thead th, tr th');
     for (var i=0;i<ths.length;i++){
       var t = (ths[i].textContent||'').trim().toLowerCase();
@@ -6889,13 +6880,12 @@ var tbody=document.querySelector('#alertsTable tbody'); if(!tbody) return; tbody
   }
 
   function patchTable(tb){
-    if (!tb || !tb.querySelectorAll) return;
     var idx = headerIdx(tb);
     var rows = tb.querySelectorAll('tbody tr');
     for (var r=0;r<rows.length;r++){
-      var cells = rows[r].children || [];
-      var cAk = idx.aktion>=0 && idx.aktion < cells.length ? cells[idx.aktion] : null;
-      var cIn = idx.info>=0   && idx.info   < cells.length ? cells[idx.info]   : null;
+      var cells = rows[r].children;
+      var cAk = idx.aktion>=0 ? cells[idx.aktion] : null;
+      var cIn = idx.info>=0   ? cells[idx.info]   : null;
       if (cAk) replaceExactTextIn(cAk);
       if (cIn) replaceExactTextIn(cIn);
       if (cIn && shouldHideRowByInfo(cIn, cAk)){
@@ -6904,32 +6894,25 @@ var tbody=document.querySelector('#alertsTable tbody'); if(!tbody) return; tbody
     }
   }
 
-  function applyOnce(){
-    var tbs = findHistoryTables();
-    for (var i=0;i<tbs.length;i++){
-      var tb = tbs[i];
-      if (!tb || !tb.querySelectorAll) continue;
-      patchTable(tb);
-      if (!tb.__lv48Obs){
-        (function(table){
-          var pending=false;
-          var obs = new MutationObserver(function(){
-            if (pending) return;
-            if (!table || !table.isConnected) return;
-            pending=true;
-            (window.requestAnimationFrame||function(f){return setTimeout(f,16)})(function(){
-              pending=false;
-              if (!table || !table.isConnected) return;
-              patchTable(table);
-            });
-          });
-          obs.observe(table.tBodies[0] || table, {childList:true, subtree:true, characterData:true});
-          table.__lv48Obs = obs;
-        })(tb);
-      }
+  
+function applyOnce(){
+  var tbs = findHistoryTables();
+  for (var i=0;i<tbs.length;i++){
+    var table = tbs[i];
+    patchTable(table);
+    if (!table.__lv48Obs){
+      var pending=false;
+      var obs = new MutationObserver(function(){
+        if (pending) return; pending=true;
+        (window.requestAnimationFrame||function(f){return setTimeout(f,16)})(function(){ pending=false; patchTable(table); });
+      });
+      obs.observe(table.tBodies[0] || table, {childList:true, subtree:true, characterData:true});
+      table.__lv48Obs = obs;
     }
-    injectAdminClear();
   }
+  injectAdminClear();
+}
+
 
   // ---- Admin: Historie löschen (nur wenn lv_admin==='1' oder window.isAdmin===true) ----
   function isAdmin(){
@@ -8963,4 +8946,14 @@ if (typeof queueTask === 'function'){
       
   }catch(_){}
 })();
-</script>
+
+      // Safe no-op wrapper to avoid broken script due to truncation
+      window.addLog = (function(orig){
+        function toSec(ts){ try{ return Math.floor(Number(ts)/1000); }catch(_){ return null; } }
+        return function(it, entry){
+          // call original to preserve behavior
+          try{ return orig.apply(this, arguments); }catch(e){ try{ if(window.console) console.error(e); }catch(_){ } }
+        };
+      })(origAddLog);
+      window.addLog.__lvItemOpsWrapped = true;
+    </script>
