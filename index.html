@@ -11978,3 +11978,93 @@ document.addEventListener('click', function __grpSaveDelegation(e){
 
 </body>
 </html>
+
+
+<!-- v103 – Finale addLog-Implementierung: garantiert eindeutige Sekunden & behält jeden Eintrag bei -->
+<script>
+(function(){
+  try{
+    function toSec(ts){ try{ return Math.floor(Number(ts)/1000); }catch(_){ return null; } }
+    function signKey(x){
+      try{
+        var d = Number(x && x.delta || 0);
+        if (d>0) return 'in';
+        if (d<0) return 'out';
+        var t = String((x && x.type) || '').toLowerCase();
+        if (t==='in' || t.indexOf('ein')===0) return 'in';
+        if (t==='out'|| t.indexOf('aus')===0) return 'out';
+      }catch(_){}
+      return '0';
+    }
+    function uid(){ try{ return (crypto && crypto.randomUUID && crypto.randomUUID()) || ('id_'+Date.now().toString(36)+'_'+Math.random().toString(36).slice(2,8)); }catch(_){ return 'id_'+Date.now(); } }
+    function nextTs(n){
+      try{
+        n = Number(n); if(!isFinite(n) || n<=0) n = Date.now();
+      }catch(_){ n = Date.now(); }
+      if (typeof window.__lv_lastTs !== 'number') window.__lv_lastTs = 0;
+      if (n <= window.__lv_lastTs) n = window.__lv_lastTs + 1;
+      window.__lv_lastTs = n;
+      return n;
+    }
+    // Diese Funktion ersetzt ALLE früheren addLog-Varianten
+    window.addLog = function(it, entry){
+      try{
+        if (!it) return;
+        if (!Array.isArray(it.log)) it.log = [];
+        // tiefe Kopie & Grundstempel
+        var e = (entry && typeof entry==='object') ? JSON.parse(JSON.stringify(entry)) : {type:'qty', delta:0};
+        e.ts = nextTs(e.ts);
+        if (!e.opId) e.opId = 'op_'+uid();
+        // Robust: delta als Zahl
+        try{ e.delta = Number((e.delta==null?0:e.delta)); }catch(_){ e.delta = 0; }
+        // Sekunden-Kollisionen vermeiden: innerhalb derselben Sekunde pro (user,type/sign,itemId/sku) NIE ersetzen -> sec hochzählen
+        var guard = 0;
+        var idKey = String(e.itemId || e.sku || '');
+        var uKey  = String(e.user || '');
+        var tKey  = String(e.type || '');
+        var sKey  = signKey(e);
+        var sec   = toSec(e.ts);
+        function clashAt(secVal){
+          var keyNew = [secVal, uKey, tKey, sKey, idKey].join('|');
+          for (var i=0;i<it.log.length;i++){
+            var x = it.log[i]||{};
+            var keyOld = [toSec(x.ts), String(x.user||''), String(x.type||''), signKey(x), String(x.itemId||x.sku||'')].join('|');
+            if (keyOld === keyNew) return true;
+          }
+          return false;
+        }
+        while (clashAt(sec) && guard < 5){
+          // auf die nächste volle Sekunde springen
+          var ms = (sec+1)*1000;
+          e.ts = nextTs(ms);
+          sec = toSec(e.ts);
+          guard++;
+        }
+        // Eintrag anhängen (niemals ersetzen)
+        it.log.push(e);
+        // Optional: Pending/Outbox füttern, damit Sync weiterläuft – nur bei qty mit !=0
+        if (e && e.type === 'qty' && e.delta !== 0){
+          try{
+            if (typeof window.addPending === 'function'){
+              var itemId = e.itemId || (it && (it.id || it.sku || it.code)) || null;
+              window.addPending({ opId: e.opId, itemId: itemId, delta: e.delta, ts: e.ts });
+            }
+          }catch(_){}
+          try{
+            if (typeof window.enqueueOutbox === 'function'){
+              var fakeItem = { id: (it && (it.id || null)), sku: (it && it.sku) || (e.sku || '') };
+              window.enqueueOutbox(fakeItem, e);
+            }
+          }catch(_){}
+        }
+      }catch(err){
+        try{
+          if(!it.log) it.log = [];
+          it.log.push(entry);
+        }catch(_){}
+      }
+    };
+    window.addLog.__v103 = true;
+  }catch(_){}
+})();
+</script>
