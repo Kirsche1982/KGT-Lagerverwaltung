@@ -696,8 +696,7 @@ td .delta-neg{ color:#2e4d8b; font-weight:600; }
     // Merge sanft
     for (var k in map){ if (!(k in window.CAT_SHORT)) window.CAT_SHORT[k] = map[k]; }
   }
-})();
-</script>
+})();</script>
 
 
 <style id="pwDlgGuardCSS">
@@ -3946,8 +3945,7 @@ if(_oc){
     });
 
   }catch(_){}
-})();
-</script>
+})();</script>
 
 
   <!-- [ADD] Category Support r1 -->
@@ -4052,8 +4050,7 @@ if(_oc){
         var c=document.getElementById('overviewCount'); if(c) c.textContent = view.length+' Einträge';
       };
     });
-  })();
-  </script>
+  })();</script>
 
 <script>
 // v06: Stabilisierung (additive Wrapper) – KEINE bestehenden Blöcke ersetzt
@@ -4151,8 +4148,7 @@ function normalizeCategoryV06(cat){
   }catch(e){
     console.error('v06 additive wrapper failed:', e);
   }
-})();
-</script>
+})();</script>
 
 <script>/* Guard-Module: Export/Import – konsolidiert bis v19 (nur Doku; keine Verhaltensänderung) */
 
@@ -4256,8 +4252,7 @@ try{ if(!(typeof hasRight==='function' ? hasRight('export_history') : (window.cu
   }catch(e){
     console.error('v07 guards failed:', e);
   }
-})();
-</script>
+})();</script>
 
 <script>
 // v08: Import/Inventar-Export Guards (deaktiviert in Supabase-Version)
@@ -4280,8 +4275,7 @@ try{ if(!(typeof hasRight==='function' ? hasRight('export_history') : (window.cu
     ];
     // Intentionally no further code.
   }catch(e){ /* no-op */ }
-})();
-</script>
+})();</script>
 
 <script>
 /**
@@ -4323,8 +4317,7 @@ try{ if(!(typeof hasRight==='function' ? hasRight('export_history') : (window.cu
       try { Object.freeze(window.lvMeta.modules); } catch(_){}
     }
   }catch(e){ /* bewusst still */ }
-})();
-</script>
+})();</script>
 
 <script>
 /**
@@ -4404,8 +4397,7 @@ try{ if(!(typeof hasRight==='function' ? hasRight('export_history') : (window.cu
 
     // Note: We deliberately do NOT set window.normalizeCategory here to avoid ANY behavior change in v11.
   }catch(e){ /* deliberately silent */ }
-})();
-</script>
+})();</script>
 <script>
 // v11 meta bump (non-functional)
 (function(){
@@ -4415,8 +4407,7 @@ try{ if(!(typeof hasRight==='function' ? hasRight('export_history') : (window.cu
     window.lvMeta.modules = window.lvMeta.modules || {};
     window.lvMeta.modules.utils = true;
   }catch(e){}
-})();
-</script>
+})();</script>
 
 <script>(function(){ try{ window.lvMeta = window.lvMeta || {}; window.lvMeta.version = 'v12'; }catch(e){} })();</script>
 <script>(function(){ try{ window.lvMeta = window.lvMeta || {}; window.lvMeta.version = 'v13'; }catch(e){} })();</script><script>(function(){ try{ window.lvMeta = window.lvMeta || {}; window.lvMeta.version = 'v14'; }catch(e){} })();</script><script>(function(){ try{ window.lvMeta = window.lvMeta || {}; window.lvMeta.version = 'v15'; }catch(e){} })();</script>
@@ -4462,8 +4453,7 @@ try{ if(!(typeof hasRight==='function' ? hasRight('export_history') : (window.cu
     // Version fortschreiben
     try{ window.lvMeta.version = 'v16'; }catch(_){}
   }catch(e){ /* bewusst still */ }
-})();
-</script>
+})();</script>
 <script>(function(){ try{ window.lvMeta = window.lvMeta || {}; window.lvMeta.version = 'v17'; }catch(e){} })();</script>
 <script>
 /**
@@ -4482,8 +4472,7 @@ try{ if(!(typeof hasRight==='function' ? hasRight('export_history') : (window.cu
     // Version anheben
     window.lvMeta.version = 'v18';
   }catch(e){ /* silent */ }
-})();
-</script>
+})();</script>
 <script>(function(){ try{ window.lvMeta = window.lvMeta || {}; window.lvMeta.version = 'v19'; }catch(e){} })();</script>
 <style id="lv-badge-style">
 .lv-badge{display:inline-flex;align-items:center;gap:.35rem;font-size:.78rem;line-height:1;border-radius:999px;padding:.2rem .5rem;font-weight:600;vertical-align:middle}
@@ -4572,8 +4561,7 @@ try{ if(!(typeof hasRight==='function' ? hasRight('export_history') : (window.cu
       setTimeout(install, 0);
     }
   }catch(e){ /* UI-only; silent */ }
-})();
-</script>
+})();</script>
 
 <script>
 // v21 – Live-Update für XLSX-Badge (UI-only)
@@ -4651,8 +4639,7 @@ try{ if(!(typeof hasRight==='function' ? hasRight('export_history') : (window.cu
       setTimeout(startWatcher, 0);
     }
   }catch(e){ /* silent */ }
-})();
-</script>
+})();</script>
 
 <script>
 // v22 – Sanfte Vereinheitlichung der Kategorie-Optionen (additiv)
@@ -4760,8 +4747,7 @@ try{ if(!(typeof hasRight==='function' ? hasRight('export_history') : (window.cu
       setTimeout(function(){ runOnce(); startObserver(); }, 0);
     }
   }catch(e){ /* silent */ }
-})();
-</script>
+})();</script>
 
 <script>
 // v23 – Kategorie-UI korrigiert (Abkürzungen aus Auswahl entfernt; nur echte Kategorien anzeigen)
@@ -4880,8 +4866,7 @@ try{ if(!(typeof hasRight==='function' ? hasRight('export_history') : (window.cu
       setTimeout(function(){ run(); observe(); }, 0);
     }
   }catch(e){ /* silent */ }
-})();
-</script>
+})();</script>
 
 <script>
 // v24 – Kategorien ohne "Neuware" (Editor & Übersicht identisch)
@@ -4996,8 +4981,7 @@ try{ if(!(typeof hasRight==='function' ? hasRight('export_history') : (window.cu
       setTimeout(function(){ run(); observe(); }, 0);
     }
   }catch(e){ /* silent */ }
-})();
-</script>
+})();</script>
 
 <script>
 // v25 – Übersichtsliste exakt an Editor angleichen (additiv, keine Datenänderung)
@@ -5147,8 +5131,7 @@ try{ if(!(typeof hasRight==='function' ? hasRight('export_history') : (window.cu
       }catch(_){}
     }
   }catch(e){ /* silent */ }
-})();
-</script>
+})();</script>
 <script>(function(){ try{ window.lvMeta = window.lvMeta || {}; window.lvMeta.version = 'v26'; }catch(e){} })();</script>
 <script>
 // v27 – Import: Kategorie unverändert übernehmen (verlustfrei)
@@ -5165,8 +5148,7 @@ try{ if(!(typeof hasRight==='function' ? hasRight('export_history') : (window.cu
     };
     try{ window.lvMeta = window.lvMeta || {}; window.lvMeta.version = 'v27'; }catch(_){}
   }catch(e){}
-})();
-</script>
+})();</script>
 
 <script>
 /*! v29/v30 – Mehrfachsuche + Präfixe (Materialübersicht)
@@ -5326,8 +5308,7 @@ try{ if(!(typeof hasRight==='function' ? hasRight('export_history') : (window.cu
       })();
     }
   }catch(e){ console.error(e); }
-})();
-</script>
+})();</script>
 
 <script>
 // v38 – Übersicht-Export (sichtbare Treffer) stabil
@@ -5403,8 +5384,7 @@ try{ if(!(typeof hasRight==='function' ? hasRight('export_history') : (window.cu
       }catch(_){}
     });
   }catch(e){ console.error(e); }
-})();
-</script>
+})();</script>
 
 <script>
 (function(){
@@ -5529,8 +5509,7 @@ var tbody=document.querySelector('#alertsTable tbody'); if(!tbody) return; tbody
     startupCheck();
   }
   if(document.readyState==='loading'){ document.addEventListener('DOMContentLoaded', onReady); } else { onReady(); }
-})();
-</script>
+})();</script>
 
 
 
@@ -5649,8 +5628,7 @@ var tbody=document.querySelector('#alertsTable tbody'); if(!tbody) return; tbody
       setTimeout(function(){ run(); startObserver(); }, 0);
     }
   }catch(e){ /* silent */ }
-})();
-</script>
+})();</script>
 
 
 <script>
@@ -5738,8 +5716,7 @@ var tbody=document.querySelector('#alertsTable tbody'); if(!tbody) return; tbody
       setTimeout(run, 2000);
     }
   }catch(e){ /* silent */ }
-})();
-</script>
+})();</script>
 
 
 <style id="lv-v05-warn-style">
@@ -5829,8 +5806,7 @@ var tbody=document.querySelector('#alertsTable tbody'); if(!tbody) return; tbody
       setTimeout(start, 0);
     }
   }catch(e){ /* silent */ }
-})();
-</script>
+})();</script>
 
 
 <style id="lv-v06-warn-badge">
@@ -5955,8 +5931,7 @@ var tbody=document.querySelector('#alertsTable tbody'); if(!tbody) return; tbody
       setTimeout(start,0);
     }
   }catch(e){ /* silent */ }
-})();
-</script>
+})();</script>
 
 
 
@@ -6104,8 +6079,7 @@ var tbody=document.querySelector('#alertsTable tbody'); if(!tbody) return; tbody
     if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', function(){ setTimeout(start,0); });
     else setTimeout(start,0);
   }catch(e){ /* silent */ }
-})();
-</script>
+})();</script>
 
 <script>
 (function(){
@@ -6157,8 +6131,7 @@ var tbody=document.querySelector('#alertsTable tbody'); if(!tbody) return; tbody
   }
   if (document.readyState==='loading') document.addEventListener('DOMContentLoaded', function(){ setTimeout(finalize,0); });
   else setTimeout(finalize,0);
-})();
-</script>
+})();</script>
 
 
 <script>
@@ -6236,8 +6209,7 @@ var tbody=document.querySelector('#alertsTable tbody'); if(!tbody) return; tbody
   }
   if (document.readyState==='loading') document.addEventListener('DOMContentLoaded', function(){ setTimeout(finalize,0); });
   else setTimeout(finalize,0);
-})();
-</script>
+})();</script>
 
 
 
@@ -6433,8 +6405,7 @@ var tbody=document.querySelector('#alertsTable tbody'); if(!tbody) return; tbody
     s.textContent = ".card>.badge{position:relative;padding-right:40px}.card>.badge .chip.cat{position:absolute;top:50%;right:10px;transform:translateY(-50%);padding:2px 8px;border-radius:999px;border:1px solid currentColor;background:transparent;font-size:11.5px;line-height:1;font-weight:600;opacity:.95;pointer-events:none}";
     (document.head||document.documentElement).appendChild(s);
   }
-})();
-</script>
+})();</script>
 
 
 <script id="lv39-cat-dataset">
@@ -6516,8 +6487,7 @@ var tbody=document.querySelector('#alertsTable tbody'); if(!tbody) return; tbody
   // Initial kick
   if (document.readyState==='loading'){ document.addEventListener('DOMContentLoaded', schedule); }
   else { schedule(); }
-})();
-</script>
+})();</script>
 
 
 <script id="lv40-selfcheck">
@@ -6658,8 +6628,7 @@ var tbody=document.querySelector('#alertsTable tbody'); if(!tbody) return; tbody
     document.addEventListener('DOMContentLoaded', boot);
   } else { boot(); }
   window.addEventListener('pageshow', boot);
-})();
-</script>
+})();</script>
 
 
 
@@ -6748,8 +6717,7 @@ var tbody=document.querySelector('#alertsTable tbody'); if(!tbody) return; tbody
   if (document.readyState==='loading'){ document.addEventListener('DOMContentLoaded', schedule); } else { schedule(); }
   window.addEventListener('pageshow', schedule);
   window.addEventListener('load', schedule);
-})();
-</script>
+})();</script>
 
 
 <script id="lv43-chip-guard">
@@ -6791,8 +6759,7 @@ var tbody=document.querySelector('#alertsTable tbody'); if(!tbody) return; tbody
   if (typeof window.render==='function' && !window.render.__lv43guard){
     var _r=window.render; window.render=function(){ var rv=_r.apply(this, arguments); schedule(); return rv; }; window.render.__lv43guard=true;
   }
-})();
-</script>
+})();</script>
 
 
 
@@ -7003,8 +6970,7 @@ var tbody=document.querySelector('#alertsTable tbody'); if(!tbody) return; tbody
     var t=e.target;
     if (t && (t.tagName==='SELECT' || (t.tagName==='INPUT' && (t.type==='search'||t.type==='text'||t.type==='date')))) schedule();
   }, true);
-})();
-</script>
+})();</script>
 
 
 <!-- v26: independent selftest script -->
@@ -7056,8 +7022,7 @@ var url = (__cfg && __cfg.url ? String(__cfg.url) : '').trim();
       }catch(_){}
     }
   };
-})();
-</script>
+})();</script>
 
 
 <!-- v28: startup login check (no overlay) -->
@@ -7083,8 +7048,7 @@ var sessionKey = 'lagerverwaltung_session_email'; // v26 uses _email; keep for c
       if(dlg){ try{ dlg.showModal(); }catch(_){ dlg.open=true; } }
     }
   } catch(e) { console && console.warn('startup login check failed', e); }
-});
-</script>
+});</script>
 
 
 <!-- v30: Passwort-Dialog -->
@@ -7194,8 +7158,7 @@ var sessionKey = 'lagerverwaltung_session_email'; // v26 uses _email; keep for c
       });
     }catch(_){}
   };
-})();
-</script>
+})();</script>
 
 
 <!-- v31: Konto-Dialog -->
@@ -7278,8 +7241,7 @@ var sessionKey = 'lagerverwaltung_session_email'; // v26 uses _email; keep for c
       });
     }
   });
-})();
-</script>
+})();</script>
 
 
 <!-- v39: Move requirePw into 'Benutzergruppen & Rechte' -->
@@ -7321,8 +7283,7 @@ document.addEventListener('DOMContentLoaded', function(){
   ['secSession','secAccount','secGroupsPerms','secSecurity'].forEach(function(id){
     var det = document.getElementById(id); if(det) det.open = false;
   });
-});
-</script>
+});</script>
 
 <!-- v40: PW-Dialog absolute Absicherung -->
 <script>
@@ -7411,8 +7372,7 @@ document.addEventListener('DOMContentLoaded', function(){
       var det = document.getElementById(id); if(det) det.open = false;
     });
   });
-})();
-</script>
+})();</script>
 
 
 
@@ -7503,8 +7463,7 @@ document.addEventListener('DOMContentLoaded', function(){
       });
     }, true);
   });
-})();
-</script>
+})();</script>
 
 
 
@@ -7551,8 +7510,7 @@ document.addEventListener('DOMContentLoaded', function(){
     }else{
       guardLoginDialog();
     }
-  })();
-  </script>
+  })();</script>
 
   <script>
   // vAddMemberFix: robustes Anlegen von Benutzern nur über Benutzernamen
@@ -7603,8 +7561,7 @@ document.addEventListener('DOMContentLoaded', function(){
     }else{
       bindAddMember();
     }
-  })();
-  </script>
+  })();</script>
 
 <script>
   if ('serviceWorker' in navigator) {
@@ -7666,8 +7623,7 @@ document.addEventListener('DOMContentLoaded', function(){
       };
     }
   }catch(e){}
-})();
-</script>
+})();</script>
 
 
 <script>
@@ -7762,8 +7718,7 @@ document.addEventListener('DOMContentLoaded', function(){
       if (!ev.key || /session/i.test(ev.key)) { updateSessionLabel(); }
     });
   }catch(e){}
-})();
-</script>
+})();</script>
 
 
 <script>
@@ -7824,8 +7779,7 @@ document.addEventListener('DOMContentLoaded', function(){
       installSyncSelector();
     });
   }catch(e){}
-})();
-</script>
+})();</script>
 
 
 <script>
@@ -7875,8 +7829,7 @@ document.addEventListener('DOMContentLoaded', function(){
       ensurePersistTestButton();
     });
   }catch(e){}
-})();
-</script>
+})();</script>
 
 
 <script>
@@ -7955,8 +7908,7 @@ document.addEventListener('DOMContentLoaded', function(){
       setTimeout(dedupHistoryOnce, 100);
     });
   }catch(e){}
-})();
-</script>
+})();</script>
 
 
 <script>
@@ -8033,8 +7985,7 @@ document.addEventListener('DOMContentLoaded', function(){
       };
     }
   }catch(e){ /* niemals blockieren */ }
-})();
-</script>
+})();</script>
 
 </script>
 
@@ -8088,8 +8039,7 @@ document.addEventListener('DOMContentLoaded', function(){
     }
     ['addItemLog','logChange','logBooking','pushLog','appendLog','writeLog','addLog'].forEach(wrapLogger);
   }catch(e){}
-})();
-</script>
+})();</script>
 
 
 <script>
@@ -8170,8 +8120,7 @@ document.addEventListener('DOMContentLoaded', function(){
       } else {
         hook();
       }
-    })();
-</script>
+    })();</script>
 
 
 
@@ -8232,10 +8181,7 @@ document.addEventListener('DOMContentLoaded', function(){
       };
     }
   }catch(e){ /* niemals blockieren */ }
-})();
-
-
-<script>
+})();</script><script>
 /* v63 – Mehrbenutzer-Grundgerüst (Pull-vor-Push, opId, Idempotenz – minimal-invasiv) */
 (function(){
   try{
@@ -8371,8 +8317,7 @@ document.addEventListener('DOMContentLoaded', function(){
     ['cloudPushAll','processOutbox','manualSync'].forEach(patchOutboxSender);
 
   }catch(e){ /* niemals blockieren */ }
-})();
-</script>
+})();</script>
 
 
 <script>
@@ -8487,8 +8432,7 @@ document.addEventListener('DOMContentLoaded', function(){
 ['cloudPushAll','processOutbox','manualSync'].forEach(patchOutboxSender);
 
   }catch(e){ /* niemals blockieren */ }
-})();
-</script>
+})();</script>
 
 
 <script>
@@ -8964,8 +8908,7 @@ if (typeof queueTask === 'function'){
       window.addLog.__lvItemOpsOrig = origAddLog;
     }
   }catch(_){}
-})();
-</script>
+})();</script>
 
 
 <script>
@@ -9409,8 +9352,7 @@ if (typeof queueTask === 'function'){
     };
 
   }catch(_){}
-})();
-</script>
+})();</script>
 
 <script>
 // v82 – ItemOps-Rebase-Hook (lokaler Abgleich, ohne Bestandsänderung)
@@ -9508,8 +9450,7 @@ if (typeof queueTask === 'function'){
       window.lvItemOpsRebaseAfterPull = lvItemOpsRebaseAfterPull;
     }
   }catch(_){}
-})();
-</script>
+})();</script>
 
 <script>
 // v81 – Zentraler Sync-Ablauf (runFullSync) – noch nicht automatisch verwendet
@@ -9577,8 +9518,7 @@ if (typeof queueTask === 'function'){
       window.runFullSync = runFullSync;
     }
   }catch(_){}
-})();
-</script>
+})();</script>
 
 <script>
 // v90 – Sync beim Beenden (optionale Sicherheitsfunktion)
@@ -9719,8 +9659,7 @@ if (typeof queueTask === 'function'){
       }catch(_){}
     });
   }catch(_){}
-})();
-</script>
+})();</script>
 
 <script>
 // v93 – Push-Diagnose: zeige Status/Fehlertexte bei fehlgeschlagenem Cloud-Push (ohne neue Buttons)
@@ -9775,8 +9714,7 @@ if (typeof queueTask === 'function'){
       };
     }
   }catch(_){}
-})();
-</script>
+})();</script>
 
 <script>
 // v96 – Fix: Login unberührt lassen, Push-Button nur per Capture-Layer abfangen (kein DOM-Umbau)
@@ -9820,8 +9758,7 @@ if (typeof queueTask === 'function'){
       try{ installDirectPush(); }catch(_){}
     });
   }catch(_){}
-})();
-</script>
+})();</script>
 
 <script>
 // v97 – Schreib-Diagnose (nur Beobachtung): zeigt Status jeder Supabase-Schreibanfrage als Toast
@@ -9851,8 +9788,7 @@ if (typeof queueTask === 'function'){
       };
     }
   }catch(_){}
-})();
-</script>
+})();</script>
 
 <script>
 // v98 – Log- & Datum-Merge nach Cloud-Pull (verhindert Zurücksetzen)
@@ -9972,8 +9908,7 @@ if (typeof queueTask === 'function'){
   }catch(e){
     try{ console.error('v98 merge install error', e); }catch(_){}
   }
-})();
-</script>
+})();</script>
 
 <script>
 // v99 – Log-Dedupe verbessert: opId priorisieren, sonst Sekundengenauigkeit + Delta/Typ;
@@ -10116,8 +10051,7 @@ if (typeof queueTask === 'function'){
       window.cloudPullAll.__lvMergeLogsInstalled99 = true;
     }
   }catch(_){}
-})();
-</script>
+})();</script>
 
 <script>
 // v100 – Full Sync: Push-first (verhindert Zurücksetzen lokaler Änderungen)
@@ -10182,8 +10116,7 @@ if (typeof queueTask === 'function'){
       window.runFullSync.__lvPushFirst = true;
     }
   }catch(_){}
-})();
-</script>
+})();</script>
 
 <!-- v19 – Cloud-Persistenz für Warnungen & Mindestbestände + selektiver Sync + Push-first -->
 <script>
@@ -10309,8 +10242,7 @@ if (typeof queueTask === 'function'){
     window.runFullSync.__lvSelPushFirst = true;
   }
 
-})(); 
-</script>
+})();</script>
 </script>
 
 <!-- v20 – Alerts: Scope/Owner/GroupMask UI + Cloud-Bindung + Sichtbarkeits-Gating -->
@@ -10509,8 +10441,7 @@ if (typeof queueTask === 'function'){
 
   // Optional: Badge/Status etc. anpassen – bewusst weggelassen (reines Gating)
 
-})();
-</script>
+})();</script>
 
 <script>
 (function(){
@@ -10529,8 +10460,7 @@ if (typeof queueTask === 'function'){
       btnMenu.__alertsPullOnOpen = true;
     }
   }catch(_){ }
-})();
-</script>
+})();</script>
 
 
 <script>
@@ -10634,8 +10564,7 @@ if (typeof queueTask === 'function'){
       }
     }
   } catch(e){ /* last-resort guard */ }
-})();
-</script>
+})();</script>
 
 <script>
 document.addEventListener('DOMContentLoaded', function(){
@@ -10648,8 +10577,7 @@ document.addEventListener('DOMContentLoaded', function(){
     if (n) n.style.display = allowed ? '' : 'none';
     if (d) d.style.display = allowed ? '' : 'none';
   }catch(_){}
-});
-</script>
+});</script>
 <script>
 document.addEventListener('DOMContentLoaded', function(){
   try{
@@ -10661,8 +10589,7 @@ document.addEventListener('DOMContentLoaded', function(){
     if (n) n.style.display = allowed ? '' : 'none';
     if (d) d.style.display = allowed ? '' : 'none';
   }catch(_){}
-});
-</script>
+});</script>
 <script>
 // Gate: darf Outbox/Sync auslösen? (sync_basic oder sync_advanced oder Admin/Lokaladmin)
 function canSyncBasicOrAdvanced(){
@@ -10708,8 +10635,7 @@ document.addEventListener('click', function __grpSaveDelegation(e){
       if (typeof saveCurrentGroup === 'function') saveCurrentGroup();
     }
   }catch(_){}
-});
-</script>
+});</script>
 <script>
 // --- Buchungs-Schnellsuche (Name/SKU) ---
 (function(){
@@ -10769,8 +10695,7 @@ document.addEventListener('click', function __grpSaveDelegation(e){
   });
   // Exponieren für manuelles Triggern (optional)
   window.bookApplyFilter = bookApplyFilter;
-})();
-</script>
+})();</script>
 
 <script id="lv-pw-ux-v006">
 (function(){
@@ -10917,8 +10842,7 @@ document.addEventListener('click', function __grpSaveDelegation(e){
     bindAccountPw();
     bindMemberPw();
   });
-})();
-</script>
+})();</script>
 
 
 <script id="lv-login-ux-v007">
@@ -10995,8 +10919,7 @@ document.addEventListener('click', function __grpSaveDelegation(e){
     // Falls der Dialog programmgesteuert nachträglich in den DOM gehängt wird:
     setTimeout(function(){ bindDialogEnter(); preventDoubleClick(); observeLoginOpen(); }, 300);
   });
-})();
-</script>
+})();</script>
 
 
 <script id="lv-outbox-gate-v008">
@@ -11083,8 +11006,7 @@ document.addEventListener('click', function __grpSaveDelegation(e){
   });
   // Fallback: periodisch leichtgewichtig prüfen (sehr selten)
   setInterval(function(){ applyOutboxUI(); }, 3000);
-})();
-</script>
+})();</script>
 
 
 <script id="lv-outbox-banner-v009">
@@ -11171,8 +11093,7 @@ document.addEventListener('click', function __grpSaveDelegation(e){
     if(e.key===outboxKey || e.key==='lv_admin' || e.key==='lv_session'){ applyAll(); }
   });
   setInterval(applyAll, 3000);
-})();
-</script>
+})();</script>
 
 
 <script id="lv-cat-normalize-v010">
@@ -11257,8 +11178,7 @@ document.addEventListener('click', function __grpSaveDelegation(e){
   });
   // periodisch sanft aktualisieren (kollisionsarm)
   setInterval(patchRenderedCategoryChips, 2500);
-})();
-</script>
+})();</script>
 
 
 <script id="lv-cat-save-v011">
@@ -11296,8 +11216,7 @@ document.addEventListener('click', function __grpSaveDelegation(e){
       btn._lv_cat_bind = true;
     }
   });
-})();
-</script>
+})();</script>
 
 
 <script id="lv-v015-selftest-status">
@@ -11375,8 +11294,7 @@ document.addEventListener('click', function __grpSaveDelegation(e){
     };
     window._lv_v015_wrap = true;
   }
-})();
-</script>
+})();</script>
 
 
 <script id="lv-v018-history-usernames">
@@ -11458,8 +11376,7 @@ document.addEventListener('click', function __grpSaveDelegation(e){
   });
   // periodic light safeguard
   setInterval(applyHistoryUserColumn, 2000);
-})();
-</script>
+})();</script>
 
 
 <script id="lv-v020-stamp-helper">
@@ -11485,8 +11402,7 @@ document.addEventListener('click', function __grpSaveDelegation(e){
       }catch(_){ return entry; }
     };
   }
-})();
-</script>
+})();</script>
 
 
 <script>
@@ -11558,8 +11474,7 @@ document.addEventListener('click', function __grpSaveDelegation(e){
       try{ wireHistSearch(); }catch(_){}
     });
   }catch(_){}
-})();
-</script>
+})();</script>
 
 
 <script>
@@ -11874,8 +11789,7 @@ document.addEventListener('click', function __grpSaveDelegation(e){
     }catch(_){}
   });
 
-})();
-</script>
+})();</script>
 
 
 
@@ -11917,7 +11831,6 @@ document.addEventListener('click', function __grpSaveDelegation(e){
       window.queueTask.__lvAutoSyncGuard = true;
     }
   }catch(_){}
-})();
-</script>
+})();</script>
 </body>
 </html>
