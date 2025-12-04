@@ -1,5 +1,12 @@
 <!--
 Changelog
+2025-12-04 – v038 – History 0-Delta-Bereinigung & Script-Tags gefixt
+- v62: Daten-De-Dup für Historie wieder aktiviert (entfernt nur in/out (0) neben echter qty±n-Buchung pro Item & Sekunde).
+- Syntax: Fehlende </script>-Tags bei v62/v73 ergänzt (verhindert „Unexpected token '<'“ in der Konsole).
+-->
+
+<!--
+Changelog
 2025-12-04 – v036 – Syntaxfix & History-Dedupe entschärft
 - Defekten ItemOpsLocal-Wrapper (v73) vollständig ersetzt (kein „Unexpected token 'catch'“ mehr).
 - v62-History-De-Dup vorsichtig entschärft: keine Sekundengruppierung mehr, Einträge bleiben getrennt sichtbar.
@@ -8022,6 +8029,8 @@ document.addEventListener('DOMContentLoaded', function(){
 })();
 </script>
 
+</script>
+
 
 <script>
 /* v61 – Buchungs-Schreiber: nur ein Log pro Buchung (minimal-invasiv) */
@@ -8122,10 +8131,36 @@ document.addEventListener('DOMContentLoaded', function(){
     })();
 
     // -------- Daten-Konsolidierung (saveJson for items) --------
-    // Aktuell: No-Op, nur Hook-Skelett, um kompatibel zu bleiben.
+    function toSec(ts){ try{ return Math.floor(Number(ts)/1000); }catch(_){ return null; } }
     function consolidateLogsV62(log){
-      // bewusst leer: keine weitere Daten-De-Dup mehr hier
-      return 0;
+      if(!Array.isArray(log) || log.length<2) return 0;
+      var bySec = {};
+      for (var i=0;i<log.length;i++){
+        var e = log[i]||{};
+        var sec = toSec(e.ts);
+        if (sec==null) continue;
+        if (!bySec[sec]) bySec[sec]=[];
+        bySec[sec].push({idx:i, type:(e.type||'').toString(), delta:Number(e.delta||0)});
+      }
+      var removeIdx = [];
+      Object.keys(bySec).forEach(function(sec){
+        var arr = bySec[sec];
+        var qty = arr.find(function(x){ return x.type==='qty' && x.delta!==0; });
+        if (!qty) return;
+        arr.forEach(function(x){
+          if ((x.type==='in' || x.type==='out') && x.delta===0){
+            // Zeichenprüfung wie v59 – nur wenn Richtung passt
+            if ((qty.delta>0 && x.type==='in') || (qty.delta<0 && x.type==='out')){
+              removeIdx.push(x.idx);
+            }
+          }
+        });
+      });
+      if (removeIdx.length){
+        removeIdx.sort(function(a,b){ return b-a; });
+        for (var r=0;r<removeIdx.length;r++){ log.splice(removeIdx[r],1); }
+      }
+      return removeIdx.length;
     }
 
     if (typeof window.saveJson === 'function' && !window.saveJson__v62){
@@ -8885,6 +8920,8 @@ if (typeof queueTask === 'function'){
     }
   }catch(_){}
 })();
+</script>
+
 
 <script>
 // v74 – cloudPullItemOps: ItemOps aus Supabase laden (nur lokal speichern, keine Bestandsänderung)
