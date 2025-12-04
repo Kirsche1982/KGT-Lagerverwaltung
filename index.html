@@ -2762,10 +2762,7 @@ if(!isIn && !isOut){ var r = String(L.reason||'').toLowerCase(); if(/eingang|zug
         var k = [sec(x.ts), (x.user||''), (x.type||''), signKey(x), (x.itemId||x.sku||'')].join('|');
         return k === keyNew;
       });
-      if (clash){
-        // push as a distinct entry
-        e.ts = Number(e.ts||Date.now()) + 1;
-      }
+      var guard=0; while(clash && guard<2000){ var nowMs=Number(e.ts||Date.now()); var nextSec=(Math.floor(nowMs/1000)+1)*1000; e.ts=nextSec; keyNew=[Math.floor(e.ts/1000),(e.user||''),(e.type||''),signKey(e),(e.itemId||e.sku||'')].join('|'); clash=it.log.some(function(x){ var k=[Math.floor(Number(x.ts)/1000),(x.user||''),(x.type||''),signKey(x),(x.itemId||x.sku||'')].join('|'); return k===keyNew;}); guard++; }
     }catch(_){}
     it.log.push(e);
   }catch(_){
