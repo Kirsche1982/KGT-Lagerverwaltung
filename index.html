@@ -11874,5 +11874,62 @@ document.addEventListener('click', function __grpSaveDelegation(e){
 
 
 
+
+<script>
+/* v101 – Stabile Historie: eindeutige Zeitstempel & opId-Stamping, damit keine Einträge die oberste Zeile ersetzen */
+(function(){
+  try{
+    // Monoton steigender Zeitstempel (ms). Wenn zwei Buchungen im selben ms kommen,
+    // wird automatisch +1 ms addiert. Global pro App.
+    function __lv_nextTs(ts){
+      try{
+        var n = Number(ts);
+        if (!isFinite(n) || n <= 0) n = Date.now();
+      }catch(_){ n = Date.now(); }
+      if (typeof window.__lv_lastTs !== 'number') window.__lv_lastTs = 0;
+      if (n <= window.__lv_lastTs) n = window.__lv_lastTs + 1;
+      window.__lv_lastTs = n;
+      return n;
+    }
+    // Unique id helper (falls nicht vorhanden)
+    if (typeof window.uid !== 'function'){
+      window.uid = function(){ return 'id-'+Date.now().toString(36)+'-'+Math.random().toString(36).slice(2,8); };
+    }
+    function stampEntry(e){
+      try{
+        var x = (e && typeof e==='object') ? e : {};
+        // robuste ts-Logik
+        x.ts = __lv_nextTs(x.ts);
+        // opId priorisieren (v99-Logik nutzt sie für Dedupe)
+        if (!x.opId) x.opId = 'op_'+window.uid();
+        return x;
+      }catch(_){ return e; }
+    }
+    function wrapLogWriter(fnName){
+      try{
+        var f = window[fnName];
+        if (typeof f !== 'function' || f.__lv101_wrapped) return;
+        var orig = f;
+        window[fnName] = function(){
+          try{
+            // Versuche, den Log-Entry-Parameter zu finden und zu stempeln
+            for (var i=0;i<arguments.length;i++){
+              var a = arguments[i];
+              if (a && typeof a==='object' && ('type' in a || 'delta' in a || 'qty' in a || 'ts' in a)){
+                arguments[i] = stampEntry(a);
+                break;
+              }
+            }
+          }catch(_){ /* non-blocking */ }
+          return orig.apply(this, arguments);
+        };
+        window[fnName].__lv101_wrapped = true;
+      }catch(_){ /* non-blocking */ }
+    }
+    ['addItemLog','logChange','logBooking','pushLog','appendLog','writeLog','addLog'].forEach(wrapLogWriter);
+  }catch(e){ try{ console.error('v101 history-stamp patch error', e); }catch(_){ } }
+})();
+</script>
+
 </body>
 </html>
