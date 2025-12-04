@@ -6894,22 +6894,25 @@ var tbody=document.querySelector('#alertsTable tbody'); if(!tbody) return; tbody
     }
   }
 
-  function applyOnce(){
-    var tbs = findHistoryTables();
-    for (var i=0;i<tbs.length;i++){
-      patchTable(tbs[i]);
-      if (!tbs[i].__lv48Obs){
-        var pending=false;
-        var obs = new MutationObserver(function(){
-          if (pending) return; pending=true;
-          (window.requestAnimationFrame||function(f){return setTimeout(f,16)})(function(){ pending=false; patchTable(tbs[i]); });
-        });
-        obs.observe(tbs[i].tBodies[0] || tbs[i], {childList:true, subtree:true, characterData:true});
-        tbs[i].__lv48Obs = obs;
-      }
+  
+function applyOnce(){
+  var tbs = findHistoryTables();
+  for (var i=0;i<tbs.length;i++){
+    var table = tbs[i];
+    patchTable(table);
+    if (!table.__lv48Obs){
+      var pending=false;
+      var obs = new MutationObserver(function(){
+        if (pending) return; pending=true;
+        (window.requestAnimationFrame||function(f){return setTimeout(f,16)})(function(){ pending=false; patchTable(table); });
+      });
+      obs.observe(table.tBodies[0] || table, {childList:true, subtree:true, characterData:true});
+      table.__lv48Obs = obs;
     }
-    injectAdminClear();
   }
+  injectAdminClear();
+}
+
 
   // ---- Admin: Historie löschen (nur wenn lv_admin==='1' oder window.isAdmin===true) ----
   function isAdmin(){
