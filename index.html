@@ -1,5 +1,13 @@
 <!--
 Changelog
+2025-12-04 – v044 – v62 sauber & Script-Pairing final
+- v62-Skriptblock vollständig ersetzt (syntaktisch korrekt, keine Duplikate/Fragmente).
+- Doppelter/trunkierter „Daten-Konsolidierung“-Anhang entfernt.
+- Globales Script-Pairing erneut ausgeführt (keine offenen <script>-Übergänge).
+-->
+
+<!--
+Changelog
 2025-12-04 – v043 – v62 Segment komplett repariert + Script-Pairing global
 - v62-Block vollständig ersetzt (Anzeige-Filter + sichere Daten-Konsolidierung, keine offenen Fragmente mehr).
 - Dokumentweit <script>-Übergänge gepaart (verhindert „Unexpected token '<'“ / „Unexpected end of input“).
@@ -10,7 +18,8 @@ Changelog
 <!--
 Changelog
 2025-12-04 – v042 – Script-Pairing (global) & History-Ansicht stabil
-- Alle offenen <script>-Blöcke zwischen Segmenten automatisch geschlossen (SyntaxError „Unexpected token '<'“ beseitigt).
+- Alle offenen </script>
+<script>-Blöcke zwischen Segmenten automatisch geschlossen (SyntaxError „Unexpected token '<'“ beseitigt).
 - Anzeige-Filter für Historie abgesichert (0‑Delta neben echtem ±n wird unterdrückt; Daten bleiben unverändert).
 -->
 
@@ -8062,137 +8071,102 @@ document.addEventListener('DOMContentLoaded', function(){
 /* v62 – Historie-Qualität (Anzeige & Daten – konservativ, idempotent) */
 (function(){
   try{
-    // ---- Anzeige-Filter: blendet nur "leichte Duplikate" aus ----
-    // Regeln:
-    // 1) Im gleichen Sekundenfenster (ts auf Sekunde) pro Artikel (itemName+sku):
-    //    - Wenn mind. ein Eintrag mit delta != 0 existiert, werden delta==0-Einträge unterdrückt.
-    // 2) Perfekte Duplikate (gleicher ts, user, type, itemName, sku, delta, reason) werden in der Ansicht einmalig gezeigt.
-    function secOf(ts){ var n = Number(ts); return isFinite(n) ? Math.floor(n/1000) : null; }
+    // 1. Helper: Sekundengenauigkeit
+    function toSec(ts){ try{ return Math.floor(Number(ts)/1000); }catch(_){ return null; } }
 
+    // 2. Logic: Logs bereinigen (0-in/out entfernen, wenn qty vorhanden)
+    function consolidateLogsV62(log){
+      if(!Array.isArray(log) || log.length < 2) return 0;
+      var bySec = {};
+      for (var i=0; i<log.length; i++){
+        var e = log[i] || {};
+        var sec = toSec(e.ts);
+        if (sec == null) continue;
+        if (!bySec[sec]) bySec[sec] = [];
+        bySec[sec].push({idx:i, type:String(e.type||''), delta:Number(e.delta||0)});
+      }
+      var removeIdx = [];
+      Object.keys(bySec).forEach(function(sec){
+        var arr = bySec[sec];
+        var qty = null;
+        // Suche echte qty-Änderung in dieser Sekunde
+        for(var k=0; k<arr.length; k++){
+          if(arr[k].type === 'qty' && arr[k].delta !== 0){ qty = arr[k]; break; }
+        }
+        if (!qty) return;
+
+        // Markiere überflüssige 0-Delta Einträge
+        arr.forEach(function(x){
+          if ((x.type === 'in' || x.type === 'out') && x.delta === 0){
+            if ((qty.delta > 0 && x.type === 'in') || (qty.delta < 0 && x.type === 'out')){
+              removeIdx.push(x.idx);
+            }
+          }
+        });
+      });
+      // Entfernen (rückwärts)
+      if (removeIdx.length){
+        removeIdx.sort(function(a,b){ return b-a; });
+        for (var r=0; r<removeIdx.length; r++){ log.splice(removeIdx[r], 1); }
+      }
+      return removeIdx.length;
+    }
+
+    // 3. Anzeige-Filter (für aggregateHistory)
     window.__lv62_histFilter = function(rows){
       try{
         if(!Array.isArray(rows) || rows.length < 2) return rows;
-
         var hasNZByKey = Object.create(null);
-        var seenExact   = Object.create(null);
-
-        // Prepass: non-zero deltas per (sec|item|sku)
+        var seenExact = Object.create(null);
         for (var i=0;i<rows.length;i++){
           var r = rows[i] || {};
-          var s = secOf(r.ts);
-          if (s == null) continue;
-          var key = s+'|'+(r.itemName||'')+'|'+(r.sku||'');
-          var d = Number(r.delta||0);
-          if (d !== 0){
-            hasNZByKey[key] = true;
+          var s = toSec(r.ts);
+          if (s != null){
+            var key = s+'|'+(r.itemName||'')+'|'+(r.sku||'');
+            if (Number(r.delta||0) !== 0) hasNZByKey[key] = true;
           }
         }
-
         var out = [];
         for (var j=0;j<rows.length;j++){
           var r2 = rows[j] || {};
-          var s2 = secOf(r2.ts);
+          var s2 = toSec(r2.ts);
           var d2 = Number(r2.delta||0);
-
-          // Rule 1: drop zero delta when a non-zero exists in the same second for same item
           if (s2 != null){
             var k2 = s2+'|'+(r2.itemName||'')+'|'+(r2.sku||'');
             if (hasNZByKey[k2] && d2 === 0) continue;
           }
-
-          // Rule 2: suppress perfect duplicates in view
-          var kExact = [
-            String(r2.ts||''), String(r2.user||''), String(r2.type||''),
-            String(r2.itemName||''), String(r2.sku||''),
-            String(r2.delta==null?'':r2.delta), String(r2.reason||'')
-          ].join('|');
+          var kExact = [r2.ts, r2.user, r2.type, r2.itemName, r2.sku, r2.delta, r2.reason].join('|');
           if (seenExact[kExact]) continue;
           seenExact[kExact] = 1;
-
           out.push(r2);
         }
         return out;
       }catch(_){ return rows; }
     };
 
-    // Hook aggregateHistory-Ausgabe, wenn vorhanden (idempotent)
-    function wrapAgg(){
-      try{
-        if (typeof window.aggregateHistory === 'function' && !window.aggregateHistory.__v62_wrapped){
-          var __origAgg = window.aggregateHistory;
-          window.aggregateHistory = function(){
-            var r = __origAgg.apply(this, arguments);
-            try{ if (window.__lv62_histFilter) r = window.__lv62_histFilter(r); }catch(_){}
-            return r;
-          };
-          window.aggregateHistory.__v62_wrapped = true;
-        }
-      }catch(_){}
-    }
-    if (document.readyState === 'loading'){
-      document.addEventListener('DOMContentLoaded', wrapAgg);
-    } else {
-      wrapAgg();
+    // 4. Hooks installieren
+    // Hook für Anzeige
+    if (typeof window.aggregateHistory === 'function' && !window.aggregateHistory.__v62_wrapped){
+      var __origAgg = window.aggregateHistory;
+      window.aggregateHistory = function(){
+        var r = __origAgg.apply(this, arguments);
+        try{ if (window.__lv62_histFilter) r = window.__lv62_histFilter(r); }catch(_){}
+        return r;
+      };
+      window.aggregateHistory.__v62_wrapped = true;
     }
 
-    // ---- Daten-Konsolidierung (No-Op außer 0-in/out neben qty±n) ----
-    // Entfernt nur solche 'in'/'out' mit delta==0 in derselben Sekunde,
-    // wenn zeitgleich ein qty-Eintrag mit delta!=0 existiert und Richtung passt.
-    function toSec(ts){ try{ return Math.floor(Number(ts)/1000); }catch(_){ return null; } }
-
-    function consolidateLogsV62(log){
-      if(!Array.isArray(log) || log.length<2) return 0;
-      var bySec = {};
-      for (var i=0;i<log.length;i++){
-        var e = log[i]||{};
-        var sec = toSec(e.ts);
-        if (sec==null) continue;
-        (bySec[sec]||(bySec[sec]=[])).push({idx:i, type:String(e.type||''), delta:Number(e.delta||0)});
-      }
-      var removeIdx = [];
-      Object.keys(bySec).forEach(function(sec){
-        var arr = bySec[sec];
-        var qty = null;
-        for (var t=0;t<arr.length;t++){
-          var x = arr[t];
-          if (x.type==='qty' && x.delta!==0){ qty = x; break; }
-        }
-        if (!qty) return;
-        for (var u=0;u<arr.length;u++){
-          var x = arr[u];
-          if ((x.type==='in' || x.type==='out') && x.delta===0){
-            if ((qty.delta>0 && x.type==='in') || (qty.delta<0 && x.type==='out')){
-              removeIdx.push(x.idx);
-            }
-          }
-        }
-      });
-      if (removeIdx.length){
-        removeIdx.sort(function(a,b){ return b-a; });
-        for (var r=0;r<removeIdx.length;r++){
-          log.splice(removeIdx[r],1);
-        }
-      }
-      return removeIdx.length;
-    }
-
-    // Hook saveJson, um bei Items vorsichtig zu konsolidieren (idempotent)
+    // Hook für Daten-Speicherung
     if (typeof window.saveJson === 'function' && !window.saveJson__v62){
       var _prev = window.saveJson;
       window.saveJson__v62 = true;
       window.saveJson = function(storageKey, data){
         try{
-          var keyStr = (storageKey||'')+'';
-          if (/lagerverwaltung.*items/i.test(keyStr)){
-            if (Array.isArray(data)){
-              for (var i=0;i<data.length;i++){
-                var it = data[i];
-                if (it && Array.isArray(it.log)) consolidateLogsV62(it.log);
-              }
-            } else if (data && typeof data === 'object' && Array.isArray(data.items)){
-              for (var j=0;j<data.items.length;j++){
-                var it2 = data.items[j];
-                if (it2 && Array.isArray(it2.log)) consolidateLogsV62(it2.log);
+          if (/lagerverwaltung.*items/i.test(String(storageKey||''))){
+            var list = Array.isArray(data) ? data : (data && data.items);
+            if (Array.isArray(list)){
+              for (var i=0; i<list.length; i++){
+                if (list[i] && Array.isArray(list[i].log)) consolidateLogsV62(list[i].log);
               }
             }
           }
@@ -8200,70 +8174,10 @@ document.addEventListener('DOMContentLoaded', function(){
         return _prev.apply(this, arguments);
       };
     }
-  }catch(e){ /* niemals blockieren */ }
+  }catch(e){ /* silent */ }
 })();
 </script>
-
-
-
-    // -------- Daten-Konsolidierung (saveJson for items) --------
-    function toSec(ts){ try{ return Math.floor(Number(ts)/1000); }catch(_){ return null; } }
-    function consolidateLogsV62(log){
-      if(!Array.isArray(log) || log.length<2) return 0;
-      var bySec = {};
-      for (var i=0;i<log.length;i++){
-        var e = log[i]||{};
-        var sec = toSec(e.ts);
-        if (sec==null) continue;
-        if (!bySec[sec]) bySec[sec]=[];
-        bySec[sec].push({idx:i, type:(e.type||'').toString(), delta:Number(e.delta||0)});
-      }
-      var removeIdx = [];
-      Object.keys(bySec).forEach(function(sec){
-        var arr = bySec[sec];
-        var qty = arr.find(function(x){ return x.type==='qty' && x.delta!==0; });
-        if (!qty) return;
-        arr.forEach(function(x){
-          if ((x.type==='in' || x.type==='out') && x.delta===0){
-            // Zeichenprüfung wie v59 – nur wenn Richtung passt
-            if ((qty.delta>0 && x.type==='in') || (qty.delta<0 && x.type==='out')){
-              removeIdx.push(x.idx);
-            }
-          }
-        });
-      });
-      if (removeIdx.length){
-        removeIdx.sort(function(a,b){ return b-a; });
-        for (var r=0;r<removeIdx.length;r++){ log.splice(removeIdx[r],1); }
-      }
-      return removeIdx.length;
-    }
-
-    if (typeof window.saveJson === 'function' && !window.saveJson__v62){
-      var _prev = window.saveJson;
-      window.saveJson__v62 = true;
-      window.saveJson = function(storageKey, data){
-        try{
-          var keyStr = (storageKey||'')+'';
-          if (/lagerverwaltung.*items/i.test(keyStr)){
-            if (Array.isArray(data)){
-              for (var i=0;i<data.length;i++){
-                var it = data[i];
-                if (it && Array.isArray(it.log)) consolidateLogsV62(it.log);
-              }
-            } else if (data && typeof data === 'object' && Array.isArray(data.items)){
-              for (var j=0;j<data.items.length;j++){
-                var it2 = data.items[j];
-                if (it2 && Array.isArray(it2.log)) consolidateLogsV62(it2.log);
-              }
-            }
-          }
-        }catch(_){}
-        return _prev.apply(this, arguments);
-      };
-    }
-  }catch(e){ /* niemals blockieren */ }
-})();</script><script>
+<script>
 /* v63 – Mehrbenutzer-Grundgerüst (Pull-vor-Push, opId, Idempotenz – minimal-invasiv) */
 (function(){
   try{
