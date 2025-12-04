@@ -1,5 +1,13 @@
 <!--
 Changelog
+2025-12-04 – v045 – v62 sauber ersetzt & kaputte Fragmente entfernt
+- v62-Skriptblock vollständig neu eingesetzt (syntaktisch korrekt, idempotente Hooks).
+- Zerhackte Doppel-Fragmente nach v62 entfernt (Ursache für „Unexpected end of input“).
+- Globales Script-Pairing erneut ausgeführt (keine offenen <script>-Übergänge).
+-->
+
+<!--
+Changelog
 2025-12-04 – v044 – v62 sauber & Script-Pairing final
 - v62-Skriptblock vollständig ersetzt (syntaktisch korrekt, keine Duplikate/Fragmente).
 - Doppelter/trunkierter „Daten-Konsolidierung“-Anhang entfernt.
@@ -10,7 +18,8 @@ Changelog
 Changelog
 2025-12-04 – v043 – v62 Segment komplett repariert + Script-Pairing global
 - v62-Block vollständig ersetzt (Anzeige-Filter + sichere Daten-Konsolidierung, keine offenen Fragmente mehr).
-- Dokumentweit <script>-Übergänge gepaart (verhindert „Unexpected token '<'“ / „Unexpected end of input“).
+- Dokumentweit </script>
+<script>-Übergänge gepaart (verhindert „Unexpected token '<'“ / „Unexpected end of input“).
 - Anzeige: 0-Delta neben echtem ±n (gleiche Sekunde & Artikel) ausgeblendet; perfekte Duplikate in der Ansicht unterdrückt.
 - Daten: Entfernt nur in/out (0), wenn im selben Moment eine passende qty±n existiert (idempotent, konservativ).
 -->
@@ -19,6 +28,7 @@ Changelog
 Changelog
 2025-12-04 – v042 – Script-Pairing (global) & History-Ansicht stabil
 - Alle offenen </script>
+</script>
 <script>-Blöcke zwischen Segmenten automatisch geschlossen (SyntaxError „Unexpected token '<'“ beseitigt).
 - Anzeige-Filter für Historie abgesichert (0‑Delta neben echtem ±n wird unterdrückt; Daten bleiben unverändert).
 -->
