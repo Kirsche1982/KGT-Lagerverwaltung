@@ -1,5 +1,12 @@
 <!--
 Changelog
+2025-12-04 – v039 – History-Ansicht ohne 0-Delta-Duplikate
+- Anzeige-Filter __lv62_histFilter entfernt 0-Deltas, wenn im gleichen Moment für denselben Artikel eine echte Mengenänderung existiert.
+- Daten bleiben dabei unverändert; nur die Historie-Ansicht wird bereinigt.
+-->
+
+<!--
+Changelog
 2025-12-04 – v038 – History 0-Delta-Bereinigung & Script-Tags gefixt
 - v62: Daten-De-Dup für Historie wieder aktiviert (entfernt nur in/out (0) neben echter qty±n-Buchung pro Item & Sekunde).
 - Syntax: Fehlende </script>-Tags bei v62/v73 ergänzt (verhindert „Unexpected token '<'“ in der Konsole).
@@ -8092,11 +8099,46 @@ document.addEventListener('DOMContentLoaded', function(){
 (function(){
   try{
     // -------- Anzeige-Filter (global history) --------
-    // Aktuell: keine inhaltliche Gruppierung, nur defensive Rückgabe.
+    // Entfernt nur 0-Delta-Einträge, wenn im selben Moment (Sekunde) für denselben Artikel
+    // bereits eine echte Mengenänderung (Delta != 0) existiert.
     window.__lv62_histFilter = function(rows){
       try{
         if (!Array.isArray(rows)) return Array.isArray(rows) ? rows : [];
-        return rows;
+        if (rows.length < 2) return rows;
+
+        function secOf(ts){
+          var n = Number(ts);
+          if (!isFinite(n)) return null;
+          return Math.floor(n/1000);
+        }
+
+        var byKey = {};
+        for (var i=0;i<rows.length;i++){
+          var r = rows[i] || {};
+          var sec = secOf(r.ts);
+          if (sec == null) continue;
+          var key = sec+'|'+(r.itemName||'')+'|'+(r.sku||'');
+          var d = Number(r.delta||0);
+          if (!byKey[key]) byKey[key] = { hasNonZero:false };
+          if (d !== 0) byKey[key].hasNonZero = true;
+        }
+
+        var out = [];
+        for (var j=0;j<rows.length;j++){
+          var r2 = rows[j] || {};
+          var sec2 = secOf(r2.ts);
+          var d2 = Number(r2.delta||0);
+          if (sec2 != null){
+            var key2 = sec2+'|'+(r2.itemName||'')+'|'+(r2.sku||'');
+            var info = byKey[key2];
+            if (info && info.hasNonZero && d2 === 0){
+              // 0-Delta-Duplikat neben echter Mengenänderung: in der Anzeige unterdrücken
+              continue;
+            }
+          }
+          out.push(r2);
+        }
+        return out;
       }catch(_){
         return rows;
       }
