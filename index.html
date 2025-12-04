@@ -1,5 +1,12 @@
 <!--
 Changelog
+2025-12-04 – v036 – Syntaxfix & History-Dedupe entschärft
+- Defekten ItemOpsLocal-Wrapper (v73) vollständig ersetzt (kein „Unexpected token 'catch'“ mehr).
+- v62-History-De-Dup vorsichtig entschärft: keine Sekundengruppierung mehr, Einträge bleiben getrennt sichtbar.
+-->
+
+<!--
+Changelog
 2025-12-04 – v035 – Log-Dedupe entschärft (Historie)
 - Cloud-Merge der Log-Einträge überarbeitet: opId-basiert und mit konservativer Duplikaterkennung.
 - Echte Aktionen erzeugen nun zuverlässig separate Historien-Einträge, auch bei gleicher Sekunde.
@@ -8061,65 +8068,36 @@ document.addEventListener('DOMContentLoaded', function(){
 
 
 <script>
-/* v62 – Robustere Historie-De-Dup (Anzeige & Daten) */
+/* v62 – Historie-De-Dup entschärft (Anzeige & Daten) */
+// Vorsichtig: Wir halten den Hook, aber lassen die Daten im Zweifel unangetastet,
+// damit keine echten Einträge "weggruppiert" werden können.
 (function(){
   try{
     // -------- Anzeige-Filter (global history) --------
-    // nutzt Artikel-Text/ID + Aktions-Vorzeichen, ignoriert User wenn leer/'—'
+    // Aktuell: keine inhaltliche Gruppierung, nur defensive Rückgabe.
     window.__lv62_histFilter = function(rows){
       try{
-        if (!Array.isArray(rows)) return rows;
-        function secOf(ts){
-          var n = Number(ts); if (!isFinite(n)) return null; return Math.floor(n/1000);
-        }
-        function actionSign(r){
-          var d = Number(r.delta||0);
-          if (d>0) return 'in';
-          if (d<0) return 'out';
-          // bei 0: aus r.action/r.type ableiten
-          var a = (r.action||r.type||'').toString().toLowerCase();
-          if (a.indexOf('ein')===0 || a==='in') return 'in';
-          if (a.indexOf('aus')===0 || a==='out') return 'out';
-          return '0';
-        }
-        function articleKey(r){
-          // bevorzugt interne ID/SKU, sonst Text
-          var id = (r.itemId!=null? String(r.itemId):'');
-          var sku = (r.sku!=null? String(r.sku):'');
-          var txt = (r.article||r.item||'').toString();
-          return id || sku || txt;
-        }
-        var byKey = {};
-        rows.forEach(function(r, idx){
-          var k = [secOf(r.ts), articleKey(r), actionSign(r)].join('|');
-          if (!byKey[k]) byKey[k]=[];
-          byKey[k].push({i:idx, d:Number(r.delta||0)});
-        });
-        var kill = new Set();
-        Object.keys(byKey).forEach(function(k){
-          var arr = byKey[k];
-          var hasNonZero = arr.some(function(x){ return x.d!==0; });
-          if (!hasNonZero) return;
-          arr.forEach(function(x){ if (x.d===0) kill.add(x.i); });
-        });
-        if (kill.size){
-          return rows.filter(function(_, idx){ return !kill.has(idx); });
-        }
+        if (!Array.isArray(rows)) return Array.isArray(rows) ? rows : [];
         return rows;
-      }catch(_){ return rows; }
+      }catch(_){
+        return rows;
+      }
     };
 
-    // Wire in openHistory rendering (fallback + reinforcement to v59 patch)
+    // Wire in openHistory rendering
     (function(){
       function hook(){
         try{
-          var el = document.getElementById('histCount'); // Indikator vorhanden?
           if (typeof window.aggregateHistory === 'function'){
             var origAgg = window.aggregateHistory;
             if (!origAgg.__v62_wrapped){
               window.aggregateHistory = function(){
                 var r = origAgg.apply(this, arguments);
-                if (window.__lv62_histFilter) try{ r = window.__lv62_histFilter(r); }catch(e){}
+                try{
+                  if (window.__lv62_histFilter){
+                    r = window.__lv62_histFilter(r);
+                  }
+                }catch(_){}
                 return r;
               };
               window.aggregateHistory.__v62_wrapped = true;
@@ -8127,42 +8105,18 @@ document.addEventListener('DOMContentLoaded', function(){
           }
         }catch(_){}
       }
-      if (document.readyState === 'loading') {
+      if (document.readyState === 'loading'){
         document.addEventListener('DOMContentLoaded', hook);
-      } else { hook(); }
+      } else {
+        hook();
+      }
     })();
 
     // -------- Daten-Konsolidierung (saveJson for items) --------
-    function toSec(ts){ try{ return Math.floor(Number(ts)/1000); }catch(_){ return null; } }
+    // Aktuell: No-Op, nur Hook-Skelett, um kompatibel zu bleiben.
     function consolidateLogsV62(log){
-      if(!Array.isArray(log) || log.length<2) return 0;
-      var bySec = {};
-      for (var i=0;i<log.length;i++){
-        var e = log[i]||{};
-        var sec = toSec(e.ts);
-        if (sec==null) continue;
-        if (!bySec[sec]) bySec[sec]=[];
-        bySec[sec].push({idx:i, type:(e.type||'').toString(), delta:Number(e.delta||0)});
-      }
-      var removeIdx = [];
-      Object.keys(bySec).forEach(function(sec){
-        var arr = bySec[sec];
-        var qty = arr.find(function(x){ return x.type==='qty' && x.delta!==0; });
-        if (!qty) return;
-        arr.forEach(function(x){
-          if ((x.type==='in' || x.type==='out') && x.delta===0){
-            // Zeichenprüfung wie v59 – nur wenn Richtung passt
-            if ((qty.delta>0 && x.type==='in') || (qty.delta<0 && x.type==='out')){
-              removeIdx.push(x.idx);
-            }
-          }
-        });
-      });
-      if (removeIdx.length){
-        removeIdx.sort(function(a,b){ return b-a; });
-        for (var r=0;r<removeIdx.length;r++){ log.splice(removeIdx[r],1); }
-      }
-      return removeIdx.length;
+      // bewusst leer: keine weitere Daten-De-Dup mehr hier
+      return 0;
     }
 
     if (typeof window.saveJson === 'function' && !window.saveJson__v62){
@@ -8173,9 +8127,15 @@ document.addEventListener('DOMContentLoaded', function(){
           var keyStr = (storageKey||'')+'';
           if (/lagerverwaltung.*items/i.test(keyStr)){
             if (Array.isArray(data)){
-              for (var i=0;i<data.length;i++){ var it=data[i]; if (it && Array.isArray(it.log)) consolidateLogsV62(it.log); }
-            } else if (data && typeof data==='object' && Array.isArray(data.items)){
-              for (var j=0;j<data.items.length;j++){ var it2=data.items[j]; if (it2 && Array.isArray(it2.log)) consolidateLogsV62(it2.log); }
+              for (var i=0;i<data.length;i++){
+                var it = data[i];
+                if (it && Array.isArray(it.log)) consolidateLogsV62(it.log);
+              }
+            } else if (data && typeof data === 'object' && Array.isArray(data.items)){
+              for (var j=0;j<data.items.length;j++){
+                var it2 = data.items[j];
+                if (it2 && Array.isArray(it2.log)) consolidateLogsV62(it2.log);
+              }
             }
           }
         }catch(_){}
@@ -8184,7 +8144,6 @@ document.addEventListener('DOMContentLoaded', function(){
     }
   }catch(e){ /* niemals blockieren */ }
 })();
-</script>
 
 
 <script>
@@ -8887,63 +8846,27 @@ if (typeof queueTask === 'function'){
 
     if (typeof window.addLog === 'function' && !window.addLog.__lvItemOpsWrapped){
       var origAddLog = window.addLog;
-      window.addLog = function(it, entry){
+      window.addLog = function itemOpsAddLogWrapper(item, entry){
         var result = origAddLog.apply(this, arguments);
         try{
-          if (entry && typeof entry === 'object' && entry.type === 'qty'){
-            var delta = Number(entry.delta || 0);
-            if (delta !== 0){
-              if (typeof itemOpsLocal === 'undefined' || !Array.isArray(itemOpsLocal)){
-                itemOpsLocal = [];
-              }
-              var opId = '';
-              try{
-                if (entry.opId) opId = String(entry.opId);
-                else if (typeof crypto !== 'undefined' && crypto.randomUUID){
-                  opId = crypto.randomUUID();
-                }else{
-                  opId = 'local_' + Date.now() + '_' + Math.random().toString(16).slice(2);
-                }
-              }catch(_){
-                opId = 'local_' + Date.now() + '_' + Math.random().toString(16).slice(2);
-              }
+          var it = item || {};
+          var e  = entry || {};
+          var sku = it.sku || it.SKU || it.id || null;
+          var delta = (typeof e.delta === 'number') ? e.delta :
+                      (typeof e.qty === 'number')   ? e.qty   : null;
+          var ts = e.ts || e.time || e.date || new Date().toISOString();
+          var type = e.type || e.t || null;
 
-              var sku = '';
-              try{
-                if (it){
-                  if (it.sku) sku = String(it.sku);
-                  else if (it.code) sku = String(it.code);
-                  else if (it.id) sku = String(it.id);
-                }
-              }catch(_){}
-
-              var itemId = '';
-              try{
-                if (it && it.id) itemId = String(it.id);
-              }catch(_){}
-
-              var ts = Number(entry.ts || Date.now());
-              var reason = '';
-              try{ if (entry.reason) reason = String(entry.reason); }catch(_){}
-              var user = '';
-              try{
-                if (entry.user) user = String(entry.user);
-                else if (typeof window.currentUserEmail !== 'undefined') user = String(window.currentUserEmail || '');
-              }catch(_){}
-
-              itemOpsLocal.push({
-                opId: opId,
-                sku: sku,
-                itemId: itemId,
-                delta: delta,
-                ts: ts,
-                reason: reason,
-                user: user,
-                source: 'addLog'
-              });
-
-              persistItemOpsLocal();
-            }
+          if (sku && (delta !== null || type)){
+            if (!Array.isArray(itemOpsLocal)) itemOpsLocal = [];
+            itemOpsLocal.push({
+              sku  : String(sku),
+              ts   : ts,
+              type : type || 'log',
+              delta: delta,
+              source: 'addLog'
+            });
+            persistItemOpsLocal();
           }
         }catch(_){}
         return result;
@@ -8953,7 +8876,6 @@ if (typeof queueTask === 'function'){
     }
   }catch(_){}
 })();
-</script>
 
 <script>
 // v74 – cloudPullItemOps: ItemOps aus Supabase laden (nur lokal speichern, keine Bestandsänderung)
