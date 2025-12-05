@@ -11902,5 +11902,62 @@ document.addEventListener('click', function __grpSaveDelegation(e){
   }catch(e){ /* never block */ }
 })();
 </script>
+
+<!-- v048 – History-Append Hard Override (force-push, monotonic ts) -->
+<script>
+(function(){
+  'use strict';
+  try{
+    function deepClone(o){ try{ return JSON.parse(JSON.stringify(o)); }catch(_){ return o; } }
+    function nextTs(lastTs){
+      var now = Date.now();
+      var ts  = now;
+      if (typeof lastTs === 'number' && isFinite(lastTs) && lastTs >= ts){ ts = lastTs + 1; }
+      return ts;
+    }
+    // Replace/Wrap addLog to be strictly append-only
+    if (typeof window.addLog === 'function' && !window.addLog.__v048){
+      var __orig = window.addLog;
+      window.addLog = function(it, entry){
+        try{
+          if (!it) return __orig.apply(this, arguments);
+          if (!Array.isArray(it.log)) it.log = [];
+          var last = it.log.length ? it.log[it.log.length-1] : null;
+          var e = deepClone(entry || {});
+          // stamp ts strictly increasing
+          var ts = Number(e.ts||0); if (!isFinite(ts) || ts<=0) ts = Date.now();
+          var lastTs = last && Number(last.ts) || 0;
+          if (ts <= lastTs){ ts = lastTs + 1; }
+          e.ts = ts;
+          // ensure opId for qty with delta != 0
+          try{
+            if (String(e.type||'') === 'qty' && Number(e.delta||0) !== 0){
+              if (!e.opId){
+                if (typeof crypto !== 'undefined' && crypto.randomUUID){
+                  e.opId = crypto.randomUUID();
+                } else {
+                  e.opId = 'op_' + ts + '_' + Math.random().toString(16).slice(2);
+                }
+              }
+            }
+          }catch(_){}
+          // Always append (do not rely on original writer)
+          it.log.push(e);
+          // Call original to keep any side effects (but after our push, never instead of it)
+          try{ __orig.call(this, it, e); }catch(_){}
+          return e;
+        }catch(err){
+          try{
+            if (!it.log) it.log = [];
+            it.log.push({ ts: Date.now(), type: (entry && entry.type) || '?', delta: Number(entry && entry.delta) || 0, reason: (entry && entry.reason) || '', user: (entry && entry.user) || (window.currentUserEmail||'') });
+          }catch(_){}
+        }
+      };
+      window.addLog.__v048 = true;
+    }
+  }catch(e){ /* never block */ }
+})();
+</script>
+
 </body>
 </html>
