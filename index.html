@@ -11868,5 +11868,44 @@ document.addEventListener('click', function __grpSaveDelegation(e){
 })();
 </script>
 
+
+<!-- v046 – History-Append Guard (monotonic ts + deep copy; prevents overwrite of newest row) -->
+<script>
+(function(){
+  try{
+    var __lastTs = 0;
+    if (typeof window.addLog === 'function' && !window.addLog.__lv46_guard){
+      var __origAddLog = window.addLog;
+      window.addLog = function(it, entry){
+        try{
+          if(!it) return;
+          // defensiv: tiefe Kopie, damit spätere Mutationen keine bereits gespeicherten Logs verändern
+          var e = (entry && typeof entry === 'object') ? JSON.parse(JSON.stringify(entry)) : {type:'?'};
+          var now = Date.now();
+          if (typeof e.ts !== 'number' || !isFinite(e.ts)) e.ts = now;
+          // strikte Monotonie – jede neue Buchung erhält einen größeren ts
+          if (e.ts <= __lastTs) e.ts = __lastTs + 1;
+          __lastTs = e.ts;
+          if (!Array.isArray(it.log)) it.log = [];
+          var before = it.log.length;
+          // ursprünglichen Schreiber benutzen (erhält ggf. weitere Stempel)
+          __origAddLog(it, e);
+          // Sicherheitsnetz: falls ein fremder Schreiber den letzten Eintrag nur überschrieben hat
+          if (it.log.length === before){
+            it.log.push(e);
+          }
+        }catch(_){
+          try{
+            if (!it.log) it.log = [];
+            var fallback = { ts: Date.now(), type: (entry && entry.type) || '?', delta: Number(entry && entry.delta) || 0, reason: (entry && entry.reason) || '', user: (entry && entry.user) || (window.currentUserEmail||'') };
+            it.log.push(fallback);
+          }catch(__){}
+        }
+      };
+      window.addLog.__lv46_guard = true;
+    }
+  }catch(e){ /* nie blockieren */ }
+})();
+</script>
 </body>
 </html>
