@@ -11958,6 +11958,138 @@ document.addEventListener('click', function __grpSaveDelegation(e){
   }catch(e){ /* never block */ }
 })();
 </script>
+<script>
+/* v106 – History: single, strict addLog (append-only, monotonic ts, deep clone) */
+(function(){
+  'use strict';
+  try{
+    // Entferne evtl. alte Wrapper-Flags, damit wir zuverlässig EINEN finalen Hook haben
+    try{ if (window.addLog && window.addLog.__v046_wrapped) delete window.addLog.__v046_wrapped; }catch(_){}
+    try{ if (window.addLog && window.addLog.__lv46_guard)  delete window.addLog.__lv46_guard;  }catch(_){}
+    try{ if (window.addLog && window.addLog.__v047)         delete window.addLog.__v047;         }catch(_){}
+    try{ if (window.addLog && window.addLog.__v048)         delete window.addLog.__v048;         }catch(_){}
+
+    // Original-Funktion aufnehmen (falls vorhanden), aber NICHT mehr aufrufen
+    var __origAddLog = (typeof window.addLog === 'function') ? window.addLog : function(it,e){ if(!it.log) it.log=[]; it.log.push(e); };
+
+    function deepClone(o){
+      try{ return JSON.parse(JSON.stringify(o)); }catch(_){ return (o && typeof o==='object') ? Object.assign({}, o) : o; }
+    }
+    function ensureOpId(e, ts){
+      try{
+        if (String(e.type||'')==='qty' && Number(e.delta||0)!==0 && !e.opId){
+          if (typeof crypto!=='undefined' && crypto.randomUUID) e.opId = crypto.randomUUID();
+          else e.opId = 'op_'+ts+'_'+Math.random().toString(16).slice(2);
+        }
+      }catch(_){}
+    }
+
+    window.addLog = function(it, entry){
+      try{
+        if (!it) return;
+        if (!Array.isArray(it.log)) it.log = [];
+
+        var e = deepClone(entry||{});
+        var now = Date.now();
+        var ts  = Number(e.ts||now); if (!isFinite(ts) || ts<=0) ts = now;
+
+        var lastTs = 0;
+        try{ if (it.log.length) lastTs = Number(it.log[it.log.length-1].ts)||0; }catch(_){}
+        if (ts <= lastTs) ts = lastTs + 1; // strikt monoton
+
+        e.ts = ts;
+        ensureOpId(e, ts);
+
+        // *** einziges echtes Schreiben: IMMER pushen ***
+        it.log.push(e);
+
+        // Kein Rückruf von __origAddLog mehr – wir wollen keine versteckte Mutation des letzten Eintrags!
+        return e;
+      }catch(err){
+        try{
+          if (!it.log) it.log = [];
+          it.log.push({ ts: Date.now(), type: (entry && entry.type)||'?', delta: Number(entry && entry.delta)||0, reason: (entry && entry.reason)||'', user: (entry && entry.user)|| (window.currentUserEmail||'') });
+        }catch(_){}
+      }
+    };
+    window.addLog.__v106_strict = true;
+
+    // v61-Logger-Korrektur genau 1× aktiv lassen (falls mehrfach vorhanden, frühere Varianten ignorieren)
+    if (!window.__v61_once && typeof window === 'object'){
+      window.__v61_once = true;
+      function toNum(x){ try{ return Number(x)||0 }catch(_){ return 0 } }
+      function isQtyNonZero(e){ return e && e.type==='qty' && toNum(e.delta)!==0 }
+      function isZeroInOut(e){ var t=String(e&&e.type||'').toLowerCase(); return (t==='in'||t==='out') && toNum(e&&e.delta)===0 }
+      function sameMoment(a,b){ try{ return Math.floor(Number(a.ts)/1000)===Math.floor(Number(b.ts)/1000) }catch(_){ return false } }
+      ['addItemLog','logChange','logBooking','pushLog','appendLog','writeLog','addLog'].forEach(function(fnName){
+        var f = window[fnName];
+        if (typeof f !== 'function' || f.__v61_wrapped) return;
+        var orig = f;
+        window[fnName] = function(){
+          try{
+            var args = Array.prototype.slice.call(arguments);
+            if (args.length>=2){
+              // nur a/b-Paar bereinigen
+              for (var i=0;i<args.length;i++){
+                for (var j=i+1;j<args.length;j++){
+                  var a=args[i], b=args[j];
+                  if (isQtyNonZero(a) && isZeroInOut(b) && sameMoment(a,b)){ args.splice(j,1); j--; }
+                  else if (isQtyNonZero(b) && isZeroInOut(a) && sameMoment(a,b)){ args.splice(i,1); i--; break; }
+                }
+              }
+            }
+            return orig.apply(this, args);
+          }catch(_){ return orig.apply(this, arguments); }
+        };
+        window[fnName].__v61_wrapped = true;
+      });
+    }
+
+    // v62-Konsolidierung beim Speichern – sicherstellen, dass sie nur 1× dran hängt
+    if (typeof window.saveJson === 'function' && !window.saveJson.__v62_consolidate){
+      var _savePrev = window.saveJson;
+      function toSec(ts){ try{ return Math.floor(Number(ts)/1000) }catch(_){ return null } }
+      function consolidateLogsV62(log){
+        if(!Array.isArray(log) || log.length<2) return 0;
+        var bySec = {};
+        for (var i=0;i<log.length;i++){
+          var e = log[i]||{}; var s = toSec(e.ts); if (s==null) continue;
+          (bySec[s]||(bySec[s]=[])).push({idx:i, type:String(e.type||''), delta:Number(e.delta||0)});
+        }
+        var remove = [];
+        Object.keys(bySec).forEach(function(s){
+          var arr = bySec[s]; var qty=null;
+          for (var k=0;k<arr.length;k++){ var x=arr[k]; if (x.type==='qty' && x.delta!==0){ qty=x; break; } }
+          if (!qty) return;
+          for (var u=0;u<arr.length;u++){
+            var x=arr[u];
+            if ((x.type==='in'||x.type==='out') && x.delta===0){
+              if ((qty.delta>0 && x.type==='in') || (qty.delta<0 && x.type==='out')) remove.push(x.idx);
+            }
+          }
+        });
+        if (remove.length){ remove.sort(function(a,b){return b-a}); for (var r=0;r<remove.length;r++) log.splice(remove[r],1); }
+        return remove.length;
+      }
+      window.saveJson = function(storageKey, data){
+        try{
+          var key = String(storageKey||'');
+          if (/lagerverwaltung.*items/i.test(key)){
+            var list = Array.isArray(data) ? data : (data && data.items);
+            if (Array.isArray(list)){
+              for (var i=0;i<list.length;i++){
+                var it=list[i]; if (it && Array.isArray(it.log)) consolidateLogsV62(it.log);
+              }
+            }
+          }
+        }catch(_){}
+        return _savePrev.apply(this, arguments);
+      };
+      window.saveJson.__v62_consolidate = true;
+    }
+  }catch(e){ /* nie blockieren */ }
+})();
+</script>
 
 </body>
 </html>
