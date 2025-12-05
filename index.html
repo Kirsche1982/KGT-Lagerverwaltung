@@ -11838,5 +11838,35 @@ document.addEventListener('click', function __grpSaveDelegation(e){
     }
   }catch(_){}
 })();</script>
+
+<!-- v046 – History-Append Guard & Tail Clean -->
+<script>
+(function(){
+  try{
+    function deepClone(o){ try{ return JSON.parse(JSON.stringify(o)); }catch(_){ return o; } }
+    if (typeof window.addLog === 'function' && !window.addLog.__v046_wrapped){
+      var __orig = window.addLog;
+      window.addLog = function(it, entry){
+        try{ if(!it) return __orig.apply(this, arguments); }catch(_){}
+        try{ if(!Array.isArray(it.log)) it.log = []; }catch(_){}
+        var e = deepClone(entry||{});
+        var now = Date.now();
+        var ts  = Number(e.ts||now); if(!isFinite(ts)||ts<=0) ts = now;
+        var lastTs = 0; try{ if(it.log.length) lastTs = Number(it.log[it.log.length-1].ts)||0; }catch(_){}
+        if (ts <= lastTs) ts = lastTs + 1; // strictly increasing to avoid overwrite/merge
+        e.ts = ts;
+        try{
+          if (e.type==='qty' && Number(e.delta||0)!==0 && !e.opId){
+            e.opId = (crypto&&crypto.randomUUID?crypto.randomUUID():('op_'+ts+'_'+Math.random().toString(16).slice(2)));
+          }
+        }catch(_){ e.opId = 'op_'+ts+'_'+Math.random().toString(16).slice(2); }
+        return __orig.call(this, it, e);
+      };
+      window.addLog.__v046_wrapped = true;
+    }
+  }catch(e){}
+})();
+</script>
+
 </body>
 </html>
