@@ -888,7 +888,7 @@ td .delta-neg{ color:#2e4d8b; font-weight:600; }
         </div>
       </form>
       <div class="divider"></div>
-      <details id="historyWrap">
+      <details id="historyWrap" hidden>
         <summary><b>Änderungshistorie</b> (neueste zuerst)</summary>
         <div id="history" class="log"></div>
       </details>
@@ -2647,74 +2647,21 @@ card.append(badge, title, meta);
       renderHistory(it.log||[]); dlg.showModal(); setTimeout(function(){ $name.focus() },50);
     }
     function renderHistory(log){
-
+  // Per-Artikel-Historie im Material-Dialog deaktiviert.
+  // Historie ist nur noch global über den Verlauf-Button sichtbar.
   try{
     var box = document.getElementById('history');
-    if(!box){ return; }
-    box.innerHTML = '';
-    if(!Array.isArray(log) || !log.length){
-      box.innerHTML = '<div class="muted">Keine Einträge</div>';
-      return;
-    }
-    log.slice().sort(function(a,b){ return b.ts - a.ts }).forEach(function(L){
-      var row   = document.createElement('div');
-      var date  = new Date(L.ts).toLocaleString('de-DE');
-      var delta = Number(L.delta)||0;
-      var isQty = (L.type === 'qty');
-var t = String(L.type||'').toLowerCase();
-var inAliases  = ['in','bookin','eingang','accession'];
-var outAliases = ['out','bookout','ausgang','withdraw'];
-var d = 0; try { d = Number(String(L.delta==null?0:L.delta).toString().replace(',', '.')) || 0 } catch(_) { d = 0 }
-var isIn  = (inAliases.indexOf(t)  >= 0) || (isQty && d > 0);
-var isOut = (outAliases.indexOf(t) >= 0) || (isQty && d < 0);
-if(!isIn && !isOut){ var r = String(L.reason||'').toLowerCase(); if(/eingang|zugang/.test(r)) isIn = true; else if(/ausgang|entnahme/.test(r)) isOut = true; }
-
-
-      var label = isQty
-        ? (delta > 0 ? 'Zugang' : 'Entnahme')
-        : (L.type === 'in' ? 'Eingang' : (L.type === 'out' ? 'Ausgang' : String(L.type||'')));
-
-      var who = L.user ? (' · ' + L.user) : '';
-
-      var sDate = document.createElement('span');
-      sDate.className = 'muted';
-      sDate.textContent = date + who;
-
-      var badge = document.createElement('span');
-      badge.className = 'badge ' + (isIn ? 'in' : (isOut ? 'out' : ''));
-      badge.textContent = label;
-
-      var strong = document.createElement('strong');
-      var deltaTxt = (L.type==='in'||L.type==='out')
-        ? (L.type==='in' ? 'Eingang' : 'Ausgang')
-        : ((delta>=0?'+':'')+delta);
-      strong.textContent = deltaTxt;
-
-      row.appendChild(sDate);
-      row.appendChild(document.createTextNode(' · '));
-      row.appendChild(badge);
-      row.appendChild(document.createTextNode(' · '));
-      row.appendChild(strong);
-
-      if (L.reason){
-        row.appendChild(document.createTextNode(' · '));
-        var r = document.createElement('span');
-        r.textContent = L.reason;
-        row.appendChild(r);
-      }
-
-      box.appendChild(row);
-    });
+    if(!box) return;
+    box.innerHTML = '<div class="muted">Historie pro Artikel wurde deaktiviert. Bitte nutze die globale Historie über den Button &bdquo;Verlauf&ldquo;.</div>';
   }catch(e){
     try{
       var box = document.getElementById('history');
-      if(box){ box.innerHTML = '<div class="muted">Keine Einträge</div>'; }
+      if(box){ box.innerHTML = ''; }
     }catch(_){}
-    console.error('renderHistory failed:', e);
   }
-
 }
-    function closeModal(){ dlg.close() }
+    
+function closeModal(){ dlg.close() }
     function saveFromModal(){
       if(!has('edit_items')){ toast('Keine Berechtigung'); return }
       var name=($name.value||'').trim(); var sku=($sku.value||'').trim(); var qty=Math.max(0, Math.floor(Number($qty.value||0)));
