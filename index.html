@@ -888,7 +888,7 @@ td .delta-neg{ color:#2e4d8b; font-weight:600; }
         </div>
       </form>
       <div class="divider"></div>
-      <details id="historyWrap" hidden>
+      <details id="historyWrap">
         <summary><b>Änderungshistorie</b> (neueste zuerst)</summary>
         <div id="history" class="log"></div>
       </details>
@@ -2647,21 +2647,74 @@ card.append(badge, title, meta);
       renderHistory(it.log||[]); dlg.showModal(); setTimeout(function(){ $name.focus() },50);
     }
     function renderHistory(log){
-  // Per-Artikel-Historie im Material-Dialog deaktiviert.
-  // Historie ist nur noch global über den Verlauf-Button sichtbar.
+
   try{
     var box = document.getElementById('history');
-    if(!box) return;
-    box.innerHTML = '<div class="muted">Historie pro Artikel wurde deaktiviert. Bitte nutze die globale Historie über den Button &bdquo;Verlauf&ldquo;.</div>';
+    if(!box){ return; }
+    box.innerHTML = '';
+    if(!Array.isArray(log) || !log.length){
+      box.innerHTML = '<div class="muted">Keine Einträge</div>';
+      return;
+    }
+    log.slice().sort(function(a,b){ return b.ts - a.ts }).forEach(function(L){
+      var row   = document.createElement('div');
+      var date  = new Date(L.ts).toLocaleString('de-DE');
+      var delta = Number(L.delta)||0;
+      var isQty = (L.type === 'qty');
+var t = String(L.type||'').toLowerCase();
+var inAliases  = ['in','bookin','eingang','accession'];
+var outAliases = ['out','bookout','ausgang','withdraw'];
+var d = 0; try { d = Number(String(L.delta==null?0:L.delta).toString().replace(',', '.')) || 0 } catch(_) { d = 0 }
+var isIn  = (inAliases.indexOf(t)  >= 0) || (isQty && d > 0);
+var isOut = (outAliases.indexOf(t) >= 0) || (isQty && d < 0);
+if(!isIn && !isOut){ var r = String(L.reason||'').toLowerCase(); if(/eingang|zugang/.test(r)) isIn = true; else if(/ausgang|entnahme/.test(r)) isOut = true; }
+
+
+      var label = isQty
+        ? (delta > 0 ? 'Zugang' : 'Entnahme')
+        : (L.type === 'in' ? 'Eingang' : (L.type === 'out' ? 'Ausgang' : String(L.type||'')));
+
+      var who = L.user ? (' · ' + L.user) : '';
+
+      var sDate = document.createElement('span');
+      sDate.className = 'muted';
+      sDate.textContent = date + who;
+
+      var badge = document.createElement('span');
+      badge.className = 'badge ' + (isIn ? 'in' : (isOut ? 'out' : ''));
+      badge.textContent = label;
+
+      var strong = document.createElement('strong');
+      var deltaTxt = (L.type==='in'||L.type==='out')
+        ? (L.type==='in' ? 'Eingang' : 'Ausgang')
+        : ((delta>=0?'+':'')+delta);
+      strong.textContent = deltaTxt;
+
+      row.appendChild(sDate);
+      row.appendChild(document.createTextNode(' · '));
+      row.appendChild(badge);
+      row.appendChild(document.createTextNode(' · '));
+      row.appendChild(strong);
+
+      if (L.reason){
+        row.appendChild(document.createTextNode(' · '));
+        var r = document.createElement('span');
+        r.textContent = L.reason;
+        row.appendChild(r);
+      }
+
+      box.appendChild(row);
+    });
   }catch(e){
     try{
       var box = document.getElementById('history');
-      if(box){ box.innerHTML = ''; }
+      if(box){ box.innerHTML = '<div class="muted">Keine Einträge</div>'; }
     }catch(_){}
+    console.error('renderHistory failed:', e);
   }
+
 }
-    
-function closeModal(){ dlg.close() }
+    function closeModal(){ dlg.close() }
     function saveFromModal(){
       if(!has('edit_items')){ toast('Keine Berechtigung'); return }
       var name=($name.value||'').trim(); var sku=($sku.value||'').trim(); var qty=Math.max(0, Math.floor(Number($qty.value||0)));
@@ -7815,82 +7868,15 @@ document.addEventListener('DOMContentLoaded', function(){
 
 
 <script>
-/* v57 – Historie deduplizieren (Anzeige-Ebene, minimal-invasiv) */
+/* v57 – Historie deduplizieren (Anzeige-Ebene, minimal-invasiv) – deaktiviert
+   Die Bereinigung der Historie übernimmt v62 (__lv62_histFilter).
+*/
 (function(){
   try{
-    function getHistoryTableBody(){
-      var dlg = document.querySelector('#historyDlg, dialog#historyDlg');
-      if (!dlg) return null;
-      var tbody = dlg.querySelector('table tbody, .history-table tbody, #historyTable tbody');
-      return tbody || null;
-    }
-    function parseDelta(txt){
-      if (txt == null) return null;
-      var m = (''+txt).match(/-?\d+/);
-      return m ? parseInt(m[0], 10) : null;
-    }
-    function cellText(row, idx){
-      var cell = row && row.cells ? row.cells[idx] : null;
-      if (!cell) return '';
-      return (cell.textContent || '').trim();
-    }
-    function dedupHistoryOnce(){
-      var tbody = getHistoryTableBody();
-      if (!tbody || tbody.__v57_done) return;
-      var rows = Array.prototype.slice.call(tbody.querySelectorAll('tr'));
-      if (rows.length === 0) return;
-      var byKey = {};
-      rows.forEach(function(tr){
-        var ts = cellText(tr, 0);
-        var user = cellText(tr, 1);
-        var action = cellText(tr, 2);
-        var article = cellText(tr, 3);
-        var deltaTxt = cellText(tr, 4);
-        var delta = parseDelta(deltaTxt);
-        var key = [ts, user, action, article].join('|');
-        if (!byKey[key]) byKey[key] = [];
-        byKey[key].push({tr: tr, delta: delta, zero: delta === 0});
-      });
-      var removed = 0;
-      Object.keys(byKey).forEach(function(k){
-        var arr = byKey[k];
-        if (arr.length < 2) return;
-        var hasNonZero = arr.some(function(e){ return typeof e.delta === 'number' && e.delta !== 0; });
-        if (hasNonZero){
-          arr.forEach(function(e){
-            if (e.zero && e.tr.parentNode){
-              e.tr.parentNode.removeChild(e.tr);
-              removed++;
-            }
-          });
-        }
-      });
-      if (removed > 0) tbody.__v57_done = true;
-    }
-
-    function installObserver(){
-      var dlg = document.querySelector('#historyDlg, dialog#historyDlg') || document;
-      var root = dlg;
-      var mo = new MutationObserver(function(muts){
-        for (var i=0;i<muts.length;i++){
-          var m = muts[i];
-          if (m.type === 'childList'){
-            if ((m.target && m.target.tagName && m.target.tagName.toLowerCase() === 'tbody') ||
-                (m.addedNodes && m.addedNodes.length)){
-              dedupHistoryOnce();
-            }
-          }
-        }
-      });
-      mo.observe(root, {subtree:true, childList:true});
-    }
-
-    document.addEventListener('DOMContentLoaded', function(){
-      installObserver();
-      setTimeout(dedupHistoryOnce, 100);
-    });
+    // bewusst leer
   }catch(e){}
-})();</script>
+})();
+</script>
 
 
 <script>
@@ -8025,11 +8011,20 @@ document.addEventListener('DOMContentLoaded', function(){
 
 
 <script>
-/* v62 – Historie-Qualität (Anzeige & Daten – konservativ, idempotent) */
+/* v62 – Historie-Qualität (Anzeige & Daten – konservativ, idempotent) – bereinigt
+   - Daten: consolidateLogsV62 entfernt nur in/out (0), wenn im selben Moment eine qty(±n) existiert.
+   - Anzeige: __lv62_histFilter entfernt nur exakt doppelte Einträge (keine Sekundengruppierung, keine 0‑Delta-Unterdrückung).
+*/
 (function(){
   try{
     // 1. Helper: Sekundengenauigkeit
-    function toSec(ts){ try{ return Math.floor(Number(ts)/1000); }catch(_){ return null; } }
+    function toSec(ts){
+      try{
+        return Math.floor(Number(ts)/1000);
+      }catch(_){
+        return null;
+      }
+    }
 
     // 2. Logic: Logs bereinigen (0-in/out entfernen, wenn qty vorhanden)
     function consolidateLogsV62(log){
@@ -8048,10 +8043,12 @@ document.addEventListener('DOMContentLoaded', function(){
         var qty = null;
         // Suche echte qty-Änderung in dieser Sekunde
         for(var k=0; k<arr.length; k++){
-          if(arr[k].type === 'qty' && arr[k].delta !== 0){ qty = arr[k]; break; }
+          if(arr[k].type === 'qty' && arr[k].delta !== 0){
+            qty = arr[k];
+            break;
+          }
         }
         if (!qty) return;
-
         // Markiere überflüssige 0-Delta Einträge
         arr.forEach(function(x){
           if ((x.type === 'in' || x.type === 'out') && x.delta === 0){
@@ -8064,50 +8061,38 @@ document.addEventListener('DOMContentLoaded', function(){
       // Entfernen (rückwärts)
       if (removeIdx.length){
         removeIdx.sort(function(a,b){ return b-a; });
-        for (var r=0; r<removeIdx.length; r++){ log.splice(removeIdx[r], 1); }
+        for (var r=0; r<removeIdx.length; r++){
+          log.splice(removeIdx[r], 1);
+        }
       }
       return removeIdx.length;
     }
 
-    // 3. Anzeige-Filter (für aggregateHistory)
+    // 3. Anzeige-Filter (für aggregateHistory) – nur exakt doppelte Einträge
     window.__lv62_histFilter = function(rows){
       try{
         if(!Array.isArray(rows) || rows.length < 2) return rows;
-        // Konservativ: Nur exakt doppelte Einträge entfernen.
         var seenExact = Object.create(null);
         var out = [];
         for (var j=0;j<rows.length;j++){
           var r2 = rows[j] || {};
-          var kExact = [r2.ts, r2.user, r2.type, r2.itemName, r2.sku, r2.delta, r2.reason].join('|');
+          var kExact = [
+            r2.ts,
+            r2.user,
+            r2.type,
+            r2.itemName,
+            r2.sku,
+            r2.delta,
+            r2.reason
+          ].join('|');
           if (seenExact[kExact]) continue;
           seenExact[kExact] = 1;
           out.push(r2);
         }
         return out;
-      }catch(_){ return rows; }
-    };
-          var s = toSec(r.ts);
-          if (s != null){
-            var key = s+'|'+(r.itemName||'')+'|'+(r.sku||'');
-            if (Number(r.delta||0) !== 0) hasNZByKey[key] = true;
-          }
-        }
-        var out = [];
-        for (var j=0;j<rows.length;j++){
-          var r2 = rows[j] || {};
-          var s2 = toSec(r2.ts);
-          var d2 = Number(r2.delta||0);
-          if (s2 != null){
-            var k2 = s2+'|'+(r2.itemName||'')+'|'+(r2.sku||'');
-            if (hasNZByKey[k2] && d2 === 0) continue;
-          }
-          var kExact = [r2.ts, r2.user, r2.type, r2.itemName, r2.sku, r2.delta, r2.reason].join('|');
-          if (seenExact[kExact]) continue;
-          seenExact[kExact] = 1;
-          out.push(r2);
-        }
-        return out;
-      }catch(_){ return rows; }
+      }catch(_){
+        return rows;
+      }
     };
 
     // 4. Hooks installieren
@@ -8116,7 +8101,9 @@ document.addEventListener('DOMContentLoaded', function(){
       var __origAgg = window.aggregateHistory;
       window.aggregateHistory = function(){
         var r = __origAgg.apply(this, arguments);
-        try{ if (window.__lv62_histFilter) r = window.__lv62_histFilter(r); }catch(_){}
+        try{
+          if (window.__lv62_histFilter) r = window.__lv62_histFilter(r);
+        }catch(_){}
         return r;
       };
       window.aggregateHistory.__v62_wrapped = true;
@@ -8132,7 +8119,9 @@ document.addEventListener('DOMContentLoaded', function(){
             var list = Array.isArray(data) ? data : (data && data.items);
             if (Array.isArray(list)){
               for (var i=0; i<list.length; i++){
-                if (list[i] && Array.isArray(list[i].log)) consolidateLogsV62(list[i].log);
+                if (list[i] && Array.isArray(list[i].log)){
+                  consolidateLogsV62(list[i].log);
+                }
               }
             }
           }
@@ -8140,7 +8129,9 @@ document.addEventListener('DOMContentLoaded', function(){
         return _prev.apply(this, arguments);
       };
     }
-  }catch(e){ /* silent */ }
+  }catch(e){
+    // niemals blockieren
+  }
 })();
 </script>
 <script>
