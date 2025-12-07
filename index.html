@@ -643,6 +643,8 @@ td .delta-neg{ color:#2e4d8b; font-weight:600; }
     .perm-row{ margin-bottom:6px; }
     .perm-hint{ margin-left:26px; }
     .table-wrap{ overflow:auto; border:1px solid var(--border); border-radius:12px; }
+#historyDlg .table-wrap{ max-height:420px; overflow:auto; }
+
     table.list{ border-collapse: collapse; width:100%; min-width: 760px; }
     table.list th, table.list td{ border-bottom:1px solid var(--border); padding:8px 10px; text-align:left; }
     table.list thead th{ background: var(--panel-2); position: sticky; top: 0; z-index: 1; }
@@ -2819,37 +2821,78 @@ if(!isIn && !isOut){ var r = String(L.reason||'').toLowerCase(); if(/eingang|zug
     }
 
 function openHistory(){
-      try{ if(!(typeof hasRight==='function' ? hasRight('view_history') : (window.currentPerms && currentPerms.view_history))){ if(typeof toast==='function') toast('Keine Berechtigung'); else alert('Keine Berechtigung'); return; } }catch(_){ /* fallback: no-op */ }
+      try{
+        // Berechtigungsprüfung wie bisher
+        if(!(typeof hasRight==='function' ? hasRight('view_history') : (window.currentPerms && currentPerms.view_history))){
+          if(typeof toast==='function') toast('Keine Berechtigung'); else alert('Keine Berechtigung');
+          return;
+        }
+      }catch(_){
+        // Fallback: keine Blockade der UI
+      }
 
-      var tbody = $('#historyTable').querySelector('tbody'); tbody.innerHTML='';
-      var rows = aggregateHistory();
-      $('#histCount').textContent = rows.length+' Einträge';
+      var dlg = $('#historyDlg');
+      var tbody = dlg.querySelector('#historyTable tbody');
+      if (!tbody) return;
+      tbody.innerHTML='';
+
+      var rows = aggregateHistory() || [];
+      // Erste Roh-Anzeige: Anzahl der gelieferten Einträge
+      var countEl = document.getElementById('histCount');
+      if (countEl) countEl.textContent = rows.length + ' Einträge';
+
       rows.forEach(function(r){
         var tr=document.createElement('tr');
         var isQty = (r.type==='qty');
-var t = String(r.type||'').toLowerCase();
-var inAliases  = ['in','bookin','eingang','accession'];
-var outAliases = ['out','bookout','ausgang','withdraw'];
-var d = 0; try{ d = Number(String(r.delta==null?0:r.delta).toString().replace(',', '.'))||0 }catch(_){ d=0 }
-var isIn  = (inAliases.indexOf(t)>=0) || (isQty && d>0);
-var isOut = (outAliases.indexOf(t)>=0) || (isQty && d<0);
+        var t = String(r.type||'').toLowerCase();
+        var inAliases  = ['in','bookin','eingang','accession'];
+        var outAliases = ['out','bookout','ausgang','withdraw'];
+        var d = 0;
+        try{
+          d = Number(String(r.delta==null?0:r.delta).toString().replace(',', '.'))||0;
+        }catch(_){
+          d = 0;
+        }
+        var isIn  = (inAliases.indexOf(t)>=0) || (isQty && d>0);
+        var isOut = (outAliases.indexOf(t)>=0) || (isQty && d<0);
 
-        var typeLabel = (isQty ? (Number(r.delta)>0 ? 'Zugang' : 'Entnahme') : (r.type==='in'?'Eingang':(r.type==='out'?'Ausgang':String(r.type||'?'))));
+        var typeLabel = (isQty ? (d>0 ? 'Zugang' : 'Entnahme') : (r.type==='in'?'Eingang':(r.type==='out'?'Ausgang':String(r.type||'?'))));
         var typeCell = (isQty||r.type==='in'||r.type==='out')
           ? '<span class="badge '+(isIn?'in':(isOut?'out':''))+'">'+escapeHtml(typeLabel)+'</span>'
           : escapeHtml(typeLabel);
-        var deltaVal = Number(r.delta)||0;
+        var deltaVal = d;
         var deltaCell = '<span class="'+(deltaVal>0?'delta-pos':(deltaVal<0?'delta-neg':''))+'">'+((deltaVal>=0?'+':'')+deltaVal)+'</span>';
         tr.innerHTML =
             '<td>'+escapeHtml(new Date(r.ts).toLocaleString('de-DE'))+'</td>'
-          + '<td>'+escapeHtml(r.user)+'</td>'
+          + '<td>'+escapeHtml(r.user || '—')+'</td>'
           + '<td>'+typeCell+'</td>'
           + '<td>'+escapeHtml((r.itemName||'')+' · '+(r.sku||''))+'</td>'
           + '<td>'+deltaCell+'</td>'
           + '<td>'+escapeHtml(r.reason||'')+'</td>';
         tbody.appendChild(tr);
       });
-      $('#historyDlg').showModal();
+
+      // Nach dem Rendern die tatsächlich sichtbaren Zeilen zählen (falls andere Skripte filtern)
+      setTimeout(function(){
+        if (typeof window.refreshHistoryCountFromDOM === 'function'){
+          window.refreshHistoryCountFromDOM();
+        } else {
+          try{
+            var tb = document.querySelector('#historyTable tbody');
+            var countEl2 = document.getElementById('histCount');
+            if (tb && countEl2){
+              var vis = 0;
+              for (var i=0;i<tb.rows.length;i++){
+                if (tb.rows[i].style.display === 'none') continue;
+                vis++;
+              }
+              countEl2.textContent = vis + ' Einträge';
+            }
+          }catch(_){}
+        }
+      }, 0);
+
+      dlg.showModal();
     }
 
     // ===== Groups / Members UI (password set) =====
@@ -11868,5 +11911,64 @@ document.addEventListener('click', function __grpSaveDelegation(e){
 })();
 </script>
 
+
+<script>
+/* v66 – History-Dialog: Scrollbar & zuverlässiger Zähler */
+(function(){
+  try{
+    // DOM-basierter Zähler
+    function refreshHistoryCountFromDOM(){
+      try{
+        var table = document.getElementById('historyTable');
+        var countEl = document.getElementById('histCount');
+        if (!table || !countEl) return;
+        var tbody = table.tBodies && table.tBodies[0];
+        if (!tbody) return;
+        var rows = tbody.rows || [];
+        var visible = 0;
+        for (var i = 0; i < rows.length; i++){
+          if (rows[i].style && rows[i].style.display === 'none') continue;
+          visible++;
+        }
+        countEl.textContent = visible + ' Einträge';
+      }catch(_){}
+    }
+    window.refreshHistoryCountFromDOM = refreshHistoryCountFromDOM;
+
+    // v57-Dedupe im DOM verhindern (falls noch aktiv)
+    function disableLegacyHistoryDedupe(){
+      try{
+        var dlg = document.getElementById('historyDlg');
+        if (!dlg) return;
+        var tbody = dlg.querySelector('#historyTable tbody, table tbody');
+        if (!tbody) return;
+        tbody.__v57_done = true;
+      }catch(_){}
+    }
+
+    if (document.readyState === 'loading'){
+      document.addEventListener('DOMContentLoaded', function(){
+        disableLegacyHistoryDedupe();
+      });
+    } else {
+      disableLegacyHistoryDedupe();
+    }
+
+    // Filter-Events → Zähler nachziehen
+    document.addEventListener('input', function(ev){
+      var id = ev && ev.target && ev.target.id;
+      if (id === 'histSearch' || id === 'histFrom' || id === 'histTo'){
+        setTimeout(refreshHistoryCountFromDOM, 0);
+      }
+    }, true);
+    document.addEventListener('change', function(ev){
+      var id = ev && ev.target && ev.target.id;
+      if (id === 'histType'){
+        setTimeout(refreshHistoryCountFromDOM, 0);
+      }
+    }, true);
+  }catch(_){}
+})();
+</script>
 </body>
 </html>
