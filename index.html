@@ -8073,10 +8073,19 @@ document.addEventListener('DOMContentLoaded', function(){
     window.__lv62_histFilter = function(rows){
       try{
         if(!Array.isArray(rows) || rows.length < 2) return rows;
-        var hasNZByKey = Object.create(null);
+        // Konservativ: Nur exakt doppelte Einträge entfernen.
         var seenExact = Object.create(null);
-        for (var i=0;i<rows.length;i++){
-          var r = rows[i] || {};
+        var out = [];
+        for (var j=0;j<rows.length;j++){
+          var r2 = rows[j] || {};
+          var kExact = [r2.ts, r2.user, r2.type, r2.itemName, r2.sku, r2.delta, r2.reason].join('|');
+          if (seenExact[kExact]) continue;
+          seenExact[kExact] = 1;
+          out.push(r2);
+        }
+        return out;
+      }catch(_){ return rows; }
+    };
           var s = toSec(r.ts);
           if (s != null){
             var key = s+'|'+(r.itemName||'')+'|'+(r.sku||'');
