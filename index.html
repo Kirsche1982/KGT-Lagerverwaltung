@@ -3547,45 +3547,56 @@ function refreshMembersUI(){
           }catch(err){
             console.error(err);
             toast('Excel-Import fehlgeschlagen');
+          }finally{
+            e.target.value='';
+          }
+        };
+        r.onerror = function(){ toast('Excel konnte nicht gelesen werden'); };
+        r.readAsArrayBuffer(f);
+      }catch(_){}
+    });
     $('#btnPrint') && $('#btnPrint').addEventListener('click', function(){
-      if(!has('print_excel')){ toast('Keine Berechtigung'); return }
-      try{
-        var rows = (Array.isArray(items)?items:[]).slice();
-        var css = "" +
-          "<style>body{font:14px/1.45 system-ui,-apple-system,Segoe UI,Roboto,Ubuntu,Helvetica,Arial}">"+
-          "table{border-collapse:collapse;width:100%}">"+
-          "th,td{border:1px solid #ddd;padding:6px 8px;text-align:left}">"+
-          "thead th{background:#f2f2f2;position:sticky;top:0}">"+
-          "h2{margin:6px 0 10px 0}</style>";
-        var html = "<!doctype html><html><head><meta charset='utf-8'><title>Lager – Übersicht</title>" + css + "</head><body>";
-        html += "<h2>Lager – Übersicht</h2>";
-        html += "<table><thead><tr>" +
-                "<th>Artikelbezeichnung</th><th>Art.-Nr.</th><th>Kategorie</th><th>Menge</th><th>Eingang</th><th>Ausgang</th><th>Notiz</th>" +
-                "</tr></thead><tbody>";
+      if (!has('print_excel')) { toast('Keine Berechtigung'); return; }
+      try {
+        var rows = (Array.isArray(items) ? items : []).slice();
+        var css = ''
+          + '<style>'
+          + 'body{font:14px/1.45 system-ui,-apple-system,Segoe UI,Roboto,Ubuntu,Helvetica,Arial;}'
+          + 'table{border-collapse:collapse;width:100%;}'
+          + 'th,td{border:1px solid #ddd;padding:6px 8px;text-align:left;}'
+          + 'thead th{background:#f2f2f2;position:sticky;top:0;}'
+          + 'h2{margin:6px 0 10px 0;}'
+          + '</style>';
+        var html = '<!doctype html><html><head><meta charset="utf-8"><title>Lager – Übersicht</title>' + css + '</head><body>';
+        html += '<h2>Lager – Übersicht</h2>';
+        html += '<table><thead><tr>' +
+                '<th>Artikelbezeichnung</th><th>Art.-Nr.</th><th>Kategorie</th><th>Menge</th><th>Eingang</th><th>Ausgang</th><th>Notiz</th>' +
+                '</tr></thead><tbody>';
         rows.forEach(function(x){
           var r = [
-            escapeHtml(x.name||''),
-            escapeHtml(x.sku||''),
-            escapeHtml(x.category||''),
-            String(Number(x.qty)||0),
-            escapeHtml(x.inDate||''),
-            escapeHtml(x.outDate||''),
-            escapeHtml(x.notes||'')
+            escapeHtml(x.name || ''),
+            escapeHtml(x.sku || ''),
+            escapeHtml(x.category || ''),
+            String(Number(x.qty) || 0),
+            escapeHtml(x.inDate || ''),
+            escapeHtml(x.outDate || ''),
+            escapeHtml(x.notes || '')
           ];
-          html += "<tr><td>"+r[0]+"</td><td>"+r[1]+"</td><td>"+r[2]+"</td><td>"+r[3]+"</td><td>"+r[4]+"</td><td>"+r[5]+"</td><td>"+r[6]+"</td></tr>";
+          html += '<tr><td>' + r[0] + '</td><td>' + r[1] + '</td><td>' + r[2] + '</td><td>' + r[3] + '</td><td>' + r[4] + '</td><td>' + r[5] + '</td><td>' + r[6] + '</td></tr>';
         });
-        html += "</tbody></table></body></html>";
+        html += '</tbody></table></body></html>';
         var w = window.open('', 'printLager');
-        if(w){ w.document.open(); w.document.write(html); w.document.close(); w.focus(); }
-      }catch(e){
+        if (w) {
+          w.document.open();
+          w.document.write(html);
+          w.document.close();
+          w.focus();
+        }
+      } catch (e) {
         console.error(e);
         toast('Druckansicht konnte nicht erzeugt werden');
       }
     });
-    });
- html+='</tbody></table>'; var w=window.open('','_blank'); if(!w){ toast('Popup blockiert'); return } w.document.write(html); w.document.close(); w.focus(); w.print()
-    });
-
     // Queue banner buttons
     $('#queueSendNow') && $('#queueSendNow').addEventListener('click', function(){ processOutbox() });
     $('#queueOpenSettings') && $('#queueOpenSettings').addEventListener('click', function(){ $('#settings').showModal(); document.querySelector('#secCloud').open = true; });
@@ -8284,17 +8295,20 @@ document.addEventListener('DOMContentLoaded', function(){
                 var it = items[i];
                 if (!it || !Array.isArray(it.log)) continue;
                 ensureAppliedSetOnItem(it);
-                // Filter doppelte opIds innerhalb desselben Speichervorgangs
-                var seen = new Set(it.appliedOpIds);
-                it.log = it.log.filter(function(e){
-                  if (!e || !e.opId) return true;
-                  if (seen.has(e.opId)) return false; // dupliziert
-                  seen.add(e.opId);
-                  return true;
-                });
-                // Neue als angewendet markieren
+                // Dedupe NUR innerhalb der aktuellen Log-Liste (erste Vorkommen behalten)
+                var seen = Object.create(null);
+                var newLog = [];
+                for (var j = 0; j < it.log.length; j++){
+                  var e = it.log[j];
+                  if (!e || !e.opId) { newLog.push(e); continue; }
+                  if (seen[e.opId]) { continue; }
+                  seen[e.opId] = 1;
+                  newLog.push(e);
+                }
+                it.log = newLog;
+                // Bestehende Einträge als angewendet markieren (aber NICHT löschen)
                 it.log.forEach(function(e){ if (e && e.opId) markApplied(it, e); });
-              }
+}
             }
           }
         }catch(_){}
