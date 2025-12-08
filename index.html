@@ -742,6 +742,9 @@ td .delta-neg{ color:#2e4d8b; font-weight:600; }
   #pwDlg.lv-visible { display: block !important; }
 </style>
 
+<style>
+#historyDlg .table-wrap { max-height: 420px; overflow: auto; }
+</style>
 </head>
 <body>
   <header class="appbar">
@@ -3546,7 +3549,10 @@ function refreshMembersUI(){
     });
     $('#btnPrint') && $('#btnPrint').addEventListener('click', function(){
       if(!has('print_excel')){ toast('Keine Berechtigung'); return }
-      var html='<head>\1\2 – v20an\3<meta charset="utf-8"><style>body{font-family:system-ui,Segoe UI,Arial;margin:16px}table{border-collapse:collapse;width:100%}th,td{border:1px solid #ccc;padding:6px 8px}th{background:#f2f2f2;position:sticky;top:0}</style></head>'; html+='<h2>Lager – Übersicht</h2><table><thead><tr><th>Bezeichnung</th><th>Artikelnummer</th><th>Kategorie</th><th>Menge</th><th>Eingang</th><th>Ausgang</th><th>Notiz</th></tr></thead><tbody>'; items.forEach(function(x){ html+='<tr><td>'+escapeHtml(x.name||'')+'</td><td>'+escapeHtml(x.sku||'')+'</td><td>'+escapeHtml(x.category||'')+'</td><td>'+String(Number(x.qty)||0)+'</td><td>'+escapeHtml(x.inDate||'')+'</td><td>'+escapeHtml(x.outDate||'')+'</td><td>'+escapeHtml(x.notes||'')+'</td></tr>' });
+      var html='<head>\1\2 – v20an\3<meta charset="utf-8"><style>body{font-family:system-ui,Segoe UI,Arial;margin:16px}table{border-collapse:collapse;width:100%}th,td{border:1px solid #ccc;padding:6px 8px}th{background:#f2f2f2;position:sticky;top:0}</style><style>
+#historyDlg .table-wrap { max-height: 420px; overflow: auto; }
+</style>
+</head>'; html+='<h2>Lager – Übersicht</h2><table><thead><tr><th>Bezeichnung</th><th>Artikelnummer</th><th>Kategorie</th><th>Menge</th><th>Eingang</th><th>Ausgang</th><th>Notiz</th></tr></thead><tbody>'; items.forEach(function(x){ html+='<tr><td>'+escapeHtml(x.name||'')+'</td><td>'+escapeHtml(x.sku||'')+'</td><td>'+escapeHtml(x.category||'')+'</td><td>'+String(Number(x.qty)||0)+'</td><td>'+escapeHtml(x.inDate||'')+'</td><td>'+escapeHtml(x.outDate||'')+'</td><td>'+escapeHtml(x.notes||'')+'</td></tr>' });
     // Excel Import (XLSX) – optional
     $('#btnExcelImport') && $('#btnExcelImport').addEventListener('click', function(){
       if(!has('export_import')){ toast('Keine Berechtigung'); return }
@@ -8299,17 +8305,20 @@ document.addEventListener('DOMContentLoaded', function(){
                 var it = items[i];
                 if (!it || !Array.isArray(it.log)) continue;
                 ensureAppliedSetOnItem(it);
-                // Filter doppelte opIds innerhalb desselben Speichervorgangs
-                var seen = new Set(it.appliedOpIds);
-                it.log = it.log.filter(function(e){
-                  if (!e || !e.opId) return true;
-                  if (seen.has(e.opId)) return false; // dupliziert
-                  seen.add(e.opId);
-                  return true;
-                });
-                // Neue als angewendet markieren
+                // Dedupe NUR innerhalb der aktuellen Liste (erste Vorkommen behalten)
+                var seen = Object.create(null);
+                var newLog = [];
+                for (var j=0; j<it.log.length; j++){
+                  var e = it.log[j];
+                  if (!e || !e.opId){ newLog.push(e); continue; }
+                  if (seen[e.opId]){ continue; }
+                  seen[e.opId] = 1;
+                  newLog.push(e);
+                }
+                it.log = newLog;
+                // Bestehende Einträge als angewendet markieren (aber NICHT löschen)
                 it.log.forEach(function(e){ if (e && e.opId) markApplied(it, e); });
-              }
+}
             }
           }
         }catch(_){}
