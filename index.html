@@ -490,8 +490,6 @@ Changelog
 
   <meta name="description" content="Lagerverwaltung mit Supabase‑Sync, Benutzer & Rechte, Passwort-Login, Offline‑Outbox, Historie und Ein‑Klick‑Cloud‑Backup.">
   <style>
-#historyDlg .table-wrap { max-height: 420px; overflow: auto; }
-
 /* V39: Kategorie-Chip – integriert in Badge */
 .card > .badge{ position: relative; padding-right: 40px; } /* Platz für Chip rechts */
 .card > .badge .chip.cat{
@@ -2821,83 +2819,37 @@ if(!isIn && !isOut){ var r = String(L.reason||'').toLowerCase(); if(/eingang|zug
     }
 
 function openHistory(){
-      try{
-        // Berechtigungsprüfung wie bisher
-        if(!(typeof hasRight==='function' ? hasRight('view_history') : (window.currentPerms && currentPerms.view_history))){
-          if(typeof toast==='function') toast('Keine Berechtigung'); else alert('Keine Berechtigung');
-          return;
-        }
-      }catch(_){
-        // Fallback: keine Blockade der UI
-      }
+      try{ if(!(typeof hasRight==='function' ? hasRight('view_history') : (window.currentPerms && currentPerms.view_history))){ if(typeof toast==='function') toast('Keine Berechtigung'); else alert('Keine Berechtigung'); return; } }catch(_){ /* fallback: no-op */ }
 
-      var dlg = $('#historyDlg');
-      var tbody = dlg && dlg.querySelector ? dlg.querySelector('#historyTable tbody') : null;
-      if (!tbody) return;
-      tbody.innerHTML='';
-
-      var rows = [];
-      try{
-        rows = aggregateHistory() || [];
-      }catch(_){
-        rows = [];
-      }
-
-      var countEl = document.getElementById('histCount');
-      if (countEl) countEl.textContent = rows.length + ' Einträge';
-
+      var tbody = $('#historyTable').querySelector('tbody'); tbody.innerHTML='';
+      var rows = aggregateHistory();
+      $('#histCount').textContent = rows.length+' Einträge';
       rows.forEach(function(r){
         var tr=document.createElement('tr');
         var isQty = (r.type==='qty');
-        var t = String(r.type||'').toLowerCase();
-        var inAliases  = ['in','bookin','eingang','accession'];
-        var outAliases = ['out','bookout','ausgang','withdraw'];
-        var d = 0;
-        try{
-          d = Number(String(r.delta==null?0:r.delta).toString().replace(',', '.'))||0;
-        }catch(_){
-          d = 0;
-        }
-        var isIn  = (inAliases.indexOf(t)>=0) || (isQty && d>0);
-        var isOut = (outAliases.indexOf(t)>=0) || (isQty && d<0);
+var t = String(r.type||'').toLowerCase();
+var inAliases  = ['in','bookin','eingang','accession'];
+var outAliases = ['out','bookout','ausgang','withdraw'];
+var d = 0; try{ d = Number(String(r.delta==null?0:r.delta).toString().replace(',', '.'))||0 }catch(_){ d=0 }
+var isIn  = (inAliases.indexOf(t)>=0) || (isQty && d>0);
+var isOut = (outAliases.indexOf(t)>=0) || (isQty && d<0);
 
-        var typeLabel = (isQty ? (d>0 ? 'Zugang' : 'Entnahme') : (r.type==='in'?'Eingang':(r.type==='out'?'Ausgang':String(r.type||'?'))));
+        var typeLabel = (isQty ? (Number(r.delta)>0 ? 'Zugang' : 'Entnahme') : (r.type==='in'?'Eingang':(r.type==='out'?'Ausgang':String(r.type||'?'))));
         var typeCell = (isQty||r.type==='in'||r.type==='out')
           ? '<span class="badge '+(isIn?'in':(isOut?'out':''))+'">'+escapeHtml(typeLabel)+'</span>'
           : escapeHtml(typeLabel);
-        var deltaVal = d;
+        var deltaVal = Number(r.delta)||0;
         var deltaCell = '<span class="'+(deltaVal>0?'delta-pos':(deltaVal<0?'delta-neg':''))+'">'+((deltaVal>=0?'+':'')+deltaVal)+'</span>';
         tr.innerHTML =
             '<td>'+escapeHtml(new Date(r.ts).toLocaleString('de-DE'))+'</td>'
-          + '<td>'+escapeHtml(r.user || '—')+'</td>'
+          + '<td>'+escapeHtml(r.user)+'</td>'
           + '<td>'+typeCell+'</td>'
           + '<td>'+escapeHtml((r.itemName||'')+' · '+(r.sku||''))+'</td>'
           + '<td>'+deltaCell+'</td>'
           + '<td>'+escapeHtml(r.reason||'')+'</td>';
         tbody.appendChild(tr);
       });
-
-      // Nach dem Rendern die tatsächlich sichtbaren Zeilen zählen
-      setTimeout(function(){
-        try{
-          if (typeof window.refreshHistoryCountFromDOM === 'function'){
-            window.refreshHistoryCountFromDOM();
-            return;
-          }
-          var tb = document.querySelector('#historyTable tbody');
-          var countEl2 = document.getElementById('histCount');
-          if (tb && countEl2){
-            var vis = 0;
-            for (var i=0;i<tb.rows.length;i++){
-              if (tb.rows[i].style.display === 'none') continue;
-              vis++;
-            }
-            countEl2.textContent = vis + ' Einträge';
-          }
-        }catch(_){}
-      }, 0);
-
-      if (dlg && dlg.showModal) dlg.showModal();
+      $('#historyDlg').showModal();
     }
 
     // ===== Groups / Members UI (password set) =====
@@ -3549,68 +3501,7 @@ function refreshMembersUI(){
         toast('Excel-Export fehlgeschlagen');
       }
     });
-    var btnPrint = document.getElementById('btnPrint');
-    if (btnPrint){
-      btnPrint.addEventListener('click', function(){
-        try{
-          if (typeof hasRight === 'function' && !hasRight('print_excel')){
-            if (typeof toast === 'function') toast('Keine Berechtigung');
-            else alert('Keine Berechtigung');
-            return;
-          }
-          var rows = Array.isArray(items) ? items.slice() : [];
-          var css = '' +
-            '<style>' +
-            'body{font:14px/1.45 system-ui,-apple-system,Segoe UI,Roboto,Ubuntu,Helvetica,Arial;}' +
-            'table{border-collapse:collapse;width:100%;}' +
-            'th,td{border:1px solid #ddd;padding:6px 8px;text-align:left;}' +
-            'thead th{background:#f2f2f2;position:sticky;top:0;}' +
-            'h2{margin:6px 0 10px 0;}' +
-            '</style>';
-          var html = '<!doctype html><html><head><meta charset="utf-8"><title>Lager – Übersicht</title>' + css + '</head><body>';
-          html += '<h2>Lager – Übersicht</h2>';
-          html += '<table><thead><tr>' +
-                  '<th>Artikelbezeichnung</th><th>Art.-Nr.</th><th>Kategorie</th><th>Menge</th><th>Eingang</th><th>Ausgang</th><th>Notiz</th>' +
-                  '</tr></thead><tbody>';
-          rows.forEach(function(x){
-            var r = [
-              escapeHtml(x.name||''),
-              escapeHtml(x.sku||''),
-              escapeHtml(x.category||''),
-              String(Number(x.qty)||0),
-              escapeHtml(x.inDate||''),
-              escapeHtml(x.outDate||''),
-              escapeHtml(x.notes||'')
-            ];
-            html += '<tr><td>'+r[0]+'</td><td>'+r[1]+'</td><td>'+r[2]+'</td><td>'+r[3]+'</td><td>'+r[4]+'</td><td>'+r[5]+'</td><td>'+r[6]+'</td></tr>';
-          });
-          html += '</tbody></table></body></html>';
-          var w = window.open('', 'printLager');
-          if (w){
-            w.document.open();
-            w.document.write(html);
-            w.document.close();
-            w.focus();
-          }
-        }catch(e){
-          console.error(e);
-          if (typeof toast === 'function') toast('Druckansicht konnte nicht erzeugt werden');
-        }
-      });
-    }
-              toast('Keine importierbaren Zeilen gefunden');
-            }
-          }catch(err){
-            console.error(err);
-            toast('Excel-Import fehlgeschlagen');
-          }finally{
-            e.target.value='';
-          }
-        };
-        r.onerror = function(){ toast('Excel konnte nicht gelesen werden'); };
-        r.readAsArrayBuffer(f);
-      }catch(_){}
-    });
+        // Druckansicht der Übersicht
     $('#btnPrint') && $('#btnPrint').addEventListener('click', function(){
       if (!has('print_excel')) { toast('Keine Berechtigung'); return; }
       try {
@@ -3625,9 +3516,9 @@ function refreshMembersUI(){
           + '</style>';
         var html = '<!doctype html><html><head><meta charset="utf-8"><title>Lager – Übersicht</title>' + css + '</head><body>';
         html += '<h2>Lager – Übersicht</h2>';
-        html += '<table><thead><tr>' +
-                '<th>Artikelbezeichnung</th><th>Art.-Nr.</th><th>Kategorie</th><th>Menge</th><th>Eingang</th><th>Ausgang</th><th>Notiz</th>' +
-                '</tr></thead><tbody>';
+        html += '<table><thead><tr>'
+              + '<th>Artikelbezeichnung</th><th>Art.-Nr.</th><th>Kategorie</th><th>Menge</th><th>Eingang</th><th>Ausgang</th><th>Notiz</th>'
+              + '</tr></thead><tbody>';
         rows.forEach(function(x){
           var r = [
             escapeHtml(x.name || ''),
@@ -3638,20 +3529,71 @@ function refreshMembersUI(){
             escapeHtml(x.outDate || ''),
             escapeHtml(x.notes || '')
           ];
-          html += '<tr><td>' + r[0] + '</td><td>' + r[1] + '</td><td>' + r[2] + '</td><td>' + r[3] + '</td><td>' + r[4] + '</td><td>' + r[5] + '</td><td>' + r[6] + '</td></tr>';
+          html += '<tr><td>'+r[0]+'</td><td>'+r[1]+'</td><td>'+r[2]+'</td><td>'+r[3]+'</td><td>'+r[4]+'</td><td>'+r[5]+'</td><td>'+r[6]+'</td></tr>';
         });
         html += '</tbody></table></body></html>';
         var w = window.open('', 'printLager');
-        if (w) {
+        if (w){
           w.document.open();
           w.document.write(html);
           w.document.close();
           w.focus();
         }
-      } catch (e) {
+      } catch(e) {
         console.error(e);
-        toast('Druckansicht konnte nicht erzeugt werden');
+        if (typeof toast === 'function') toast('Druckansicht konnte nicht erzeugt werden');
       }
+    });
+    // Excel Import (XLSX) – optional
+    $('#btnExcelImport') && $('#btnExcelImport').addEventListener('click', function(){
+      if(!has('export_import')){ toast('Keine Berechtigung'); return }
+      var inp = document.getElementById('excelImportFile'); if(inp) inp.click();
+    });
+    $('#excelImportFile') && $('#excelImportFile').addEventListener('change', function(e){
+      try{
+        if(!has('export_import')){ toast('Keine Berechtigung'); return }
+        var f = e.target.files && e.target.files[0];
+        if(!f){ return }
+        var r = new FileReader();
+        r.onload = function(ev){
+          try{
+            var data = new Uint8Array(ev.target.result);
+            var wb = XLSX.read(data, {type:'array'});
+            var name = (wb.SheetNames.indexOf('Lager')>=0) ? 'Lager' : wb.SheetNames[0];
+            var ws = wb.Sheets[name];
+            var arr = XLSX.utils.sheet_to_json(ws, {defval:''});
+            var imported = arr.map(function(row){
+              return {
+                id: uid(),
+                name: String(row['Artikelbezeichnung']||'').trim(),
+                sku: String(row['Art.-Nr.']||'').trim(),
+                qty: Number(row['Menge'])||0,
+                inDate: row['Eingang']||'',
+                outDate: row['Ausgang']||'',
+                notes: String(row['Notiz']||''),
+                log: [],
+                createdAt: Date.now(),
+                updatedAt: Date.now(),
+                category: keepCategory(row['Kategorie'])
+              };
+            }).filter(function(x){ return x.name || x.sku; });
+            if(imported && imported.length){
+              writeItems(imported);
+              renderOverview('');
+              toast('Excel importiert');
+            }else{
+              toast('Keine importierbaren Zeilen gefunden');
+            }
+          }catch(err){
+            console.error(err);
+            toast('Excel-Import fehlgeschlagen');
+          }finally{
+            e.target.value='';
+          }
+        };
+        r.onerror = function(){ toast('Excel konnte nicht gelesen werden'); };
+        r.readAsArrayBuffer(f);
+      }catch(_){}
     });
     // Queue banner buttons
     $('#queueSendNow') && $('#queueSendNow').addEventListener('click', function(){ processOutbox() });
@@ -8351,20 +8293,17 @@ document.addEventListener('DOMContentLoaded', function(){
                 var it = items[i];
                 if (!it || !Array.isArray(it.log)) continue;
                 ensureAppliedSetOnItem(it);
-                // Dedupe NUR innerhalb der aktuellen Log-Liste (erste Vorkommen behalten)
-                var seen = Object.create(null);
-                var newLog = [];
-                for (var j = 0; j < it.log.length; j++){
-                  var e = it.log[j];
-                  if (!e || !e.opId) { newLog.push(e); continue; }
-                  if (seen[e.opId]) { continue; }
-                  seen[e.opId] = 1;
-                  newLog.push(e);
-                }
-                it.log = newLog;
-                // Bestehende Einträge als angewendet markieren (aber NICHT löschen)
+                // Filter doppelte opIds innerhalb desselben Speichervorgangs
+                var seen = new Set(it.appliedOpIds);
+                it.log = it.log.filter(function(e){
+                  if (!e || !e.opId) return true;
+                  if (seen.has(e.opId)) return false; // dupliziert
+                  seen.add(e.opId);
+                  return true;
+                });
+                // Neue als angewendet markieren
                 it.log.forEach(function(e){ if (e && e.opId) markApplied(it, e); });
-}
+              }
             }
           }
         }catch(_){}
@@ -11966,61 +11905,5 @@ document.addEventListener('click', function __grpSaveDelegation(e){
 })();
 </script>
 
-
-<script>
-/* v66 – History-Dialog: Scrollbar & zuverlässiger Zähler */
-(function(){
-  try{
-    function refreshHistoryCountFromDOM(){
-      try{
-        var table = document.getElementById('historyTable');
-        var countEl = document.getElementById('histCount');
-        if (!table || !countEl) return;
-        var tbody = table.tBodies && table.tBodies[0];
-        if (!tbody) return;
-        var rows = tbody.rows || [];
-        var visible = 0;
-        for (var i = 0; i < rows.length; i++){
-          if (rows[i].style && rows[i].style.display === 'none') continue;
-          visible++;
-        }
-        countEl.textContent = visible + ' Einträge';
-      }catch(_){}
-    }
-    window.refreshHistoryCountFromDOM = refreshHistoryCountFromDOM;
-
-    function disableLegacyHistoryDedupe(){
-      try{
-        var dlg = document.getElementById('historyDlg');
-        if (!dlg) return;
-        var tbody = dlg.querySelector('#historyTable tbody, table tbody');
-        if (!tbody) return;
-        tbody.__v57_done = true;
-      }catch(_){}
-    }
-
-    if (document.readyState === 'loading'){
-      document.addEventListener('DOMContentLoaded', function(){
-        disableLegacyHistoryDedupe();
-      });
-    } else {
-      disableLegacyHistoryDedupe();
-    }
-
-    document.addEventListener('input', function(ev){
-      var id = ev && ev.target && ev.target.id;
-      if (id === 'histSearch' || id === 'histFrom' || id === 'histTo'){
-        setTimeout(refreshHistoryCountFromDOM, 0);
-      }
-    }, true);
-    document.addEventListener('change', function(ev){
-      var id = ev && ev.target && ev.target.id;
-      if (id === 'histType'){
-        setTimeout(refreshHistoryCountFromDOM, 0);
-      }
-    }, true);
-  }catch(_){}
-})();
-</script>
 </body>
 </html>
