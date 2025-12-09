@@ -8251,7 +8251,7 @@ document.addEventListener('DOMContentLoaded', function(){
       }catch(_){}
     }
 
-    // Hook saveJson (Items): überspringe nur echte Duplikate innerhalb des aktuellen Logs (nicht über appliedOpIds)
+    // Hook saveJson (Items): überspringe doppelte opIds, markiere neue als angewendet
     if (typeof window.saveJson === 'function' && !window.saveJson__v63_ops){
       var _savePrev = window.saveJson;
       window.saveJson__v63_ops = true;
@@ -8267,25 +8267,16 @@ document.addEventListener('DOMContentLoaded', function(){
                 var it = items[i];
                 if (!it || !Array.isArray(it.log)) continue;
                 ensureAppliedSetOnItem(it);
-                // Nur innerhalb des aktuellen Logs doppelte opIds entfernen
-                try{
-                  var seenOps = Object.create(null);
-                  var newLog = [];
-                  for (var j=0;j<it.log.length;j++){
-                    var e = it.log[j];
-                    if (!e || !e.opId){
-                      newLog.push(e);
-                      continue;
-                    }
-                    var k = String(e.opId);
-                    if (seenOps[k]) continue; // echtes Duplikat im selben it.log
-                    seenOps[k] = 1;
-                    newLog.push(e);
-                  }
-                  it.log = newLog;
-                  // Alle vorhandenen Einträge als angewendet markieren (ohne etwas zu löschen)
-                  it.log.forEach(function(e){ if (e && e.opId) markApplied(it, e); });
-                }catch(_){ /* defensiv: im Zweifel Log unverändert lassen */ }
+                // Filter doppelte opIds innerhalb desselben Speichervorgangs
+                var seen = new Set(it.appliedOpIds);
+                it.log = it.log.filter(function(e){
+                  if (!e || !e.opId) return true;
+                  if (seen.has(e.opId)) return false; // dupliziert
+                  seen.add(e.opId);
+                  return true;
+                });
+                // Neue als angewendet markieren
+                it.log.forEach(function(e){ if (e && e.opId) markApplied(it, e); });
               }
             }
           }
