@@ -8213,14 +8213,25 @@ document.addEventListener('DOMContentLoaded', function(){
       }catch(_){}
     }
 
-    // Wrap der Log-Schreiber wie in v61, nur ergänzend: opId setzen
+    // Wrap der Log-Schreiber wie in v61, nur ergänzend: opId setzen + Benutzer stempeln
     ['addItemLog','logChange','logBooking','pushLog','appendLog','writeLog','addLog'].forEach(function(fn){
       var f = window[fn];
       if (typeof f === 'function' && !f.__v63_wrapped){
         var orig = f;
         window[fn] = function(){
           var args = Array.prototype.slice.call(arguments);
-          for (var i=0;i<args.length;i++) tagOpId(args[i]);
+          for (var i=0;i<args.length;i++){
+            if (!args[i]) continue;
+            // opId setzen für Idempotenz
+            tagOpId(args[i]);
+            // Benutzer-Infos ergänzen, falls Helper vorhanden
+            if (typeof window.stampHistoryUser === 'function'){
+              try{
+                var stamped = window.stampHistoryUser(args[i]);
+                if (stamped) args[i] = stamped;
+              }catch(_){}
+            }
+          }
           return orig.apply(this, args);
         };
         window[fn].__v63_wrapped = true;
@@ -8240,7 +8251,7 @@ document.addEventListener('DOMContentLoaded', function(){
       }catch(_){}
     }
 
-    // Hook saveJson (Items): überspringe nur echte Duplikate innerhalb des aktuellen Logs (nicht über appliedOpIds)
+    // Hook saveJson (Items): überspringe doppelte opIds, markiere neue als angewendet
     if (typeof window.saveJson === 'function' && !window.saveJson__v63_ops){
       var _savePrev = window.saveJson;
       window.saveJson__v63_ops = true;
@@ -8256,25 +8267,16 @@ document.addEventListener('DOMContentLoaded', function(){
                 var it = items[i];
                 if (!it || !Array.isArray(it.log)) continue;
                 ensureAppliedSetOnItem(it);
-                // Nur innerhalb des aktuellen Logs doppelte opIds entfernen
-                try{
-                  var seenOps = Object.create(null);
-                  var newLog = [];
-                  for (var j=0;j<it.log.length;j++){
-                    var e = it.log[j];
-                    if (!e || !e.opId){
-                      newLog.push(e);
-                      continue;
-                    }
-                    var k = String(e.opId);
-                    if (seenOps[k]) continue; // echtes Duplikat im selben it.log
-                    seenOps[k] = 1;
-                    newLog.push(e);
-                  }
-                  it.log = newLog;
-                  // Alle vorhandenen Einträge als angewendet markieren (ohne etwas zu löschen)
-                  it.log.forEach(function(e){ if (e && e.opId) markApplied(it, e); });
-                }catch(_){ /* defensiv: im Zweifel Log unverändert lassen */ }
+                // Filter doppelte opIds innerhalb desselben Speichervorgangs
+                var seen = new Set(it.appliedOpIds);
+                it.log = it.log.filter(function(e){
+                  if (!e || !e.opId) return true;
+                  if (seen.has(e.opId)) return false; // dupliziert
+                  seen.add(e.opId);
+                  return true;
+                });
+                // Neue als angewendet markieren
+                it.log.forEach(function(e){ if (e && e.opId) markApplied(it, e); });
               }
             }
           }
@@ -11433,11 +11435,26 @@ document.addEventListener('click', function __grpSaveDelegation(e){
       var q = (input.value || '').toString().trim().toLowerCase();
       var rows = table.tBodies && table.tBodies[0] ? table.tBodies[0].rows : null;
       if (!rows) return;
+      // Mehrfachsuche: durch Komma getrennte Begriffe (ODER-Verknüpfung)
+      var tokens = [];
+      if (q){
+        q.split(',').forEach(function(part){
+          var t = String(part || '').trim();
+          if (t){ tokens.push(t.toLowerCase()); }
+        });
+      }
       var visible = 0;
       for (var i=0;i<rows.length;i++){
         var row = rows[i];
         var txt = (row.textContent || row.innerText || '').toLowerCase();
-        var show = !q || txt.indexOf(q) >= 0;
+        var show = false;
+        if (!tokens.length){
+          show = true; // kein Filter → alle anzeigen
+        } else {
+          for (var k=0;k<tokens.length;k++){
+            if (txt.indexOf(tokens[k]) !== -1){ show = true; break; }
+          }
+        }
         row.style.display = show ? '' : 'none';
         if (show) visible++;
       }
