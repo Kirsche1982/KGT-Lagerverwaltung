@@ -8267,15 +8267,21 @@ document.addEventListener('DOMContentLoaded', function(){
                 var it = items[i];
                 if (!it || !Array.isArray(it.log)) continue;
                 ensureAppliedSetOnItem(it);
-                // Filter doppelte opIds innerhalb desselben Speichervorgangs
-                var seen = new Set(it.appliedOpIds);
-                it.log = it.log.filter(function(e){
-                  if (!e || !e.opId) return true;
-                  if (seen.has(e.opId)) return false; // dupliziert
-                  seen.add(e.opId);
-                  return true;
-                });
-                // Neue als angewendet markieren
+                // Dedupe NUR innerhalb der aktuellen Log-Liste (erste Vorkommen behalten)
+                try{
+                  var seen = Object.create(null);
+                  var newLog = [];
+                  for (var j = 0; j < it.log.length; j++){
+                    var e = it.log[j];
+                    if (!e || !e.opId){ newLog.push(e); continue; }
+                    var k = String(e.opId);
+                    if (seen[k]){ continue; }
+                    seen[k] = 1;
+                    newLog.push(e);
+                  }
+                  it.log = newLog;
+                }catch(_){}
+                // Bestehende Einträge als angewendet markieren (aber NICHT löschen)
                 it.log.forEach(function(e){ if (e && e.opId) markApplied(it, e); });
               }
             }
@@ -8284,8 +8290,7 @@ document.addEventListener('DOMContentLoaded', function(){
         return _savePrev.apply(this, arguments);
       };
     }
-
-    // ---- v63.3: Outbox anreichern (opId + Kombinierung lokaler qty-Ops) ----
+// ---- v63.3: Outbox anreichern (opId + Kombinierung lokaler qty-Ops) ----
     function combineQtyOps(jobs){
       // Kombiniere mehrere qty-Änderungen auf dasselbe Item (nur qty-ops) zu einer Summe
       try{
@@ -11839,13 +11844,9 @@ document.addEventListener('click', function __grpSaveDelegation(e){
             try{
               // Prefer config flag if available
               var cfg = (typeof readBrConfig === 'function') ? readBrConfig() : null;
-              if (cfg && typeof cfg.autoSync !== 'undefined') auto = !!cfg.autoSync;
-            }catch(_){}
-            try{
-              // Fallback: read raw localStorage key
-              if (!auto && typeof localStorage !== 'undefined'){
-                var k = (typeof autoSyncKey !== 'undefined') ? autoSyncKey : 'lagerverwaltung_supabase_autosync';
-                auto = (localStorage.getItem(k) === '1' || localStorage.getItem(k) === 'true');
+              if (cfg && typeof cfg.autoSync !== 'undefined') {
+                var v = cfg.autoSync;
+                auto = (v === 1 || v === '1' || v === true || v === 'true');
               }
             }catch(_){}
             if (auto){
